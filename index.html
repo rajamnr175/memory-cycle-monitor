@@ -1,0 +1,1221 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0;font:14px system-ui,-apple-system,sans-serif}img{max-width:100%}[hidden]{display:none!important}</style></head><body><title>Memory Cycle Monitor</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;700;800&family=Bricolage+Grotesque:opsz,wght@12..96,600..800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: a scoreboard first (prices, drawdowns, valuations), then per-company quarterly detail, then the selloff timeline and outlook. Wafer-grey neutrals, one silicon-blue accent. */
+:root{
+  --bg:#f6f7f8; --panel:#ffffff; --ink:#0f1720; --ink2:#4a5562; --muted:#7a8592; --line:#dfe3e8; --grid:#eceff2;
+  --accent:#2a78d6; --rev:#2a78d6; --ni:#eb6834; --guide:#9ec5f4;
+  --down:#c8343a; --up:#13865a; --warn:#b57400; --chip:#eef2f6;
+  --hl:#eaf2fc; --hl-line:#b9d3f3; --tk-bg:#0f1720; --tk-fg:#f3f6f9; --tk-mut:#9aa6b2; --tk-line:#26313c; --tk-up:#3cc48c; --tk-dn:#ff7a7f;
+  --f-display:"Archivo","Helvetica Neue",Arial,sans-serif;
+  --f-body:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --f-mono:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#111417; --panel:#181c20; --ink:#eef1f4; --ink2:#b4bcc6; --muted:#8a94a0; --line:#2a3037; --grid:#22282e;
+  --accent:#3987e5; --rev:#3987e5; --ni:#d95926; --guide:#1c5cab;
+  --down:#ef6b6f; --up:#3cc48c; --warn:#e2a23a; --chip:#20262c; --hl:#15212e; --hl-line:#26476e; --tk-bg:#0a0d10; --tk-line:#222a32; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#111417; --panel:#181c20; --ink:#eef1f4; --ink2:#b4bcc6; --muted:#8a94a0; --line:#2a3037; --grid:#22282e;
+  --accent:#3987e5; --rev:#3987e5; --ni:#d95926; --guide:#1c5cab;
+  --down:#ef6b6f; --up:#3cc48c; --warn:#e2a23a; --chip:#20262c; --hl:#15212e; --hl-line:#26476e; --tk-bg:#0a0d10; --tk-line:#222a32; color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:15px;line-height:1.55;margin:0}
+.wrap{max-width:none;margin:0;padding-left:max(clamp(16px,4vw,60px),env(safe-area-inset-left,0px));padding-right:max(clamp(16px,4vw,60px),env(safe-area-inset-right,0px));padding-block:28px 56px;display:flex;flex-direction:column;gap:36px}
+h1,h2,h3{font-family:var(--f-display);text-wrap:balance;margin:0;letter-spacing:-.01em}
+h1{font-size:clamp(28px,4.4vw,44px);font-weight:800;line-height:1.08}
+h2{font-size:22px;font-weight:700}
+h3{font-size:16px;font-weight:700}
+p{margin:0;max-width:72ch}
+.eyebrow{font-family:var(--f-mono);font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.lede{color:var(--ink2);font-size:16px}
+header{display:flex;flex-direction:column;gap:12px}
+.stamp{display:flex;flex-wrap:wrap;gap:8px}
+.chk td{white-space:normal;text-align:left;vertical-align:top;min-width:140px;font-size:13px}
+.chk td:last-child{min-width:260px}
+.chk th{text-align:left}
+.chip.now{background:var(--accent);border-color:var(--accent);color:#fff}
+.chip{font-family:var(--f-mono);font-size:12px;background:var(--chip);border:1px solid var(--line);padding:3px 9px;border-radius:999px;color:var(--ink2)}
+section{display:flex;flex-direction:column;gap:14px}
+.sec-head{display:flex;flex-direction:column;gap:4px}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:18px}
+.tbl-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:10px;background:var(--panel)}
+table{border-collapse:collapse;width:100%;font-variant-numeric:tabular-nums;font-size:13.5px}
+th,td{padding:10px 12px;text-align:right;white-space:nowrap;border-bottom:1px solid var(--grid)}
+th{font-family:var(--f-mono);font-weight:500;font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);background:var(--panel);position:sticky;top:0}
+td:first-child,th:first-child{text-align:left}
+tr:last-child td{border-bottom:none}
+.co{font-weight:600}
+.co small{display:block;font-weight:400;color:var(--muted);font-family:var(--f-mono);font-size:11px}
+.neg{color:var(--down)} .pos{color:var(--up)}
+.dd{display:inline-flex;align-items:center;gap:8px}
+.ddbar{display:inline-block;height:6px;border-radius:3px;background:var(--down);opacity:.85}
+.note{font-size:12.5px;color:var(--muted)}
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:16px}
+.grid2>*{min-width:0}
+.tabs{display:flex;flex-wrap:wrap;gap:6px}
+.tab{font:inherit;font-size:13px;font-weight:600;padding:7px 13px;border-radius:999px;border:1px solid var(--line);background:var(--panel);color:var(--ink2);cursor:pointer}
+.tab:hover{border-color:var(--accent);color:var(--ink)}
+.tab[aria-selected="true"]{background:var(--accent);border-color:var(--accent);color:#fff}
+.tab:focus-visible,button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.detail{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(0,1fr);gap:16px}
+@media (max-width:860px){.detail{grid-template-columns:1fr}}
+.legend{display:flex;gap:16px;flex-wrap:wrap;font-size:12.5px;color:var(--ink2)}
+.legend i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:6px;vertical-align:-1px}
+svg text{font-family:var(--f-mono);font-size:10.5px;fill:var(--muted)}
+.facts{display:flex;flex-direction:column;gap:10px;font-size:14px}
+.facts dl{display:grid;grid-template-columns:auto 1fr;gap:6px 14px;margin:0}
+.facts dt{color:var(--muted);font-size:12.5px}
+.facts dd{margin:0;text-align:right;font-variant-numeric:tabular-nums;font-weight:500}
+.facts ul{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:6px;color:var(--ink2)}
+.tl{list-style:none;margin:0;padding:0;display:flex;flex-direction:column}
+.tl li{display:grid;grid-template-columns:96px 1fr;gap:14px;padding:12px 0;border-bottom:1px solid var(--grid)}
+.tl li:last-child{border-bottom:none}
+.tl time{font-family:var(--f-mono);font-size:12px;color:var(--muted);padding-top:2px}
+.tl b{font-weight:600}
+.tag{font-family:var(--f-mono);font-size:10.5px;letter-spacing:.05em;text-transform:uppercase;padding:1px 7px;border-radius:4px;margin-right:6px;border:1px solid currentColor}
+.t-macro{color:var(--warn)} .t-china{color:var(--down)} .t-ai{color:var(--accent)} .t-flow{color:var(--ink2)} .t-co{color:var(--up)}
+.case{display:flex;flex-direction:column;gap:10px}
+.case h3{display:flex;align-items:center;gap:8px}
+.case ul{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:8px;color:var(--ink2)}
+.case ul b{color:var(--ink)}
+.mark{width:10px;height:10px;border-radius:50%}
+.scen{display:flex;flex-direction:column;gap:14px}
+.slider-row{display:flex;flex-wrap:wrap;align-items:center;gap:12px}
+input[type=range]{flex:1;min-width:180px;accent-color:var(--accent)}
+.big{font-family:var(--f-display);font-size:28px;font-weight:800}
+.tip{position:fixed;pointer-events:none;background:var(--ink);color:var(--bg);font-size:12px;padding:8px 10px;border-radius:6px;font-family:var(--f-mono);line-height:1.45;z-index:9;max-width:260px}
+.src{font-size:12.5px;color:var(--ink2);columns:2 320px;gap:24px}
+.src a{color:var(--accent)}
+.src li{margin-bottom:5px;break-inside:avoid}
+.callout{border-left:3px solid var(--accent);padding:4px 0 4px 14px;color:var(--ink2)}
+@media (max-width:520px){.tl li{grid-template-columns:1fr;gap:4px}}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+/* ---- price chart modal ---- */
+.cm{position:fixed;inset:0;z-index:20;display:flex;align-items:center;justify-content:center;background:color-mix(in srgb,var(--ink) 55%,transparent);padding:max(12px,env(safe-area-inset-top,0px)) max(12px,env(safe-area-inset-right,0px)) max(12px,env(safe-area-inset-bottom,0px)) max(12px,env(safe-area-inset-left,0px))}
+.cm-box{background:var(--panel);color:var(--ink);border:1px solid var(--line);border-radius:14px;width:min(1080px,100%);max-height:100%;overflow:auto;display:flex;flex-direction:column;gap:12px;padding:18px;box-shadow:0 20px 60px rgba(0,0,0,.35)}
+.cm-head{display:flex;flex-wrap:wrap;justify-content:space-between;gap:10px 16px;align-items:flex-start}
+.cm-title{display:flex;flex-direction:column;gap:2px}
+.cm-title h3{font-size:20px}
+.cm-px{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+.cm-px b{font-family:var(--f-display);font-size:30px;font-weight:800;font-variant-numeric:tabular-nums}
+.cm-close{font:inherit;font-size:20px;line-height:1;border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:8px;width:36px;height:36px;cursor:pointer}
+.cm-bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:999px;padding:2px;gap:2px;background:var(--bg)}
+.seg button{font:inherit;font-family:var(--f-mono);font-size:12px;font-weight:500;padding:5px 11px;border:0;border-radius:999px;background:transparent;color:var(--ink2);cursor:pointer}
+.seg button[aria-pressed="true"]{background:var(--accent);color:#fff}
+.cm-chart{position:relative;width:100%;height:min(460px,55vh);min-height:260px;border:1px solid var(--grid);border-radius:10px;overflow:hidden}
+.cm-msg{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;text-align:center;padding:20px;color:var(--ink2);font-size:14px;background:var(--panel)}
+.cm-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px}
+.cm-stats div{border:1px solid var(--grid);border-radius:8px;padding:8px 10px;display:flex;flex-direction:column;gap:2px}
+.cm-stats span{font-family:var(--f-mono);font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
+.cm-stats b{font-variant-numeric:tabular-nums;font-weight:600}
+.cm-foot{display:flex;flex-wrap:wrap;justify-content:space-between;gap:8px;align-items:center}
+.btn{font:inherit;font-size:13px;font-weight:600;padding:7px 13px;border-radius:8px;border:1px solid var(--accent);background:transparent;color:var(--accent);cursor:pointer}
+.tile.w{cursor:pointer}
+#itiles{grid-template-columns:repeat(auto-fill,minmax(230px,1fr))}
+#atiles{grid-template-columns:repeat(auto-fill,minmax(230px,1fr))}
+#etiles{grid-template-columns:repeat(auto-fill,minmax(200px,1fr))}
+#caps{display:flex;flex-direction:column;gap:14px}
+.cap-sum{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px}
+.cap-k{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 14px;display:flex;flex-direction:column;gap:2px}
+.cap-k span{font-family:var(--f-mono);font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
+.cap-k b{font-family:var(--f-display);font-size:26px;font-weight:800;font-variant-numeric:tabular-nums}
+.cap-k small{font-family:var(--f-mono);font-size:12px}
+#capTbl td:nth-child(2),#capTbl th:nth-child(2),#capTbl td:nth-child(3),#capTbl th:nth-child(3),#capTbl th.capbar-h{text-align:left}
+.capbar-c{width:14%;min-width:90px;text-align:left!important}
+.capbar{display:block;height:12px;border-radius:0 4px 4px 0;min-width:2px}
+.capbar.g-m{background:var(--accent)} .capbar.g-a{background:var(--ni)}
+.gtag{font-family:var(--f-mono);font-size:11px;padding:1px 7px;border-radius:4px;border:1px solid currentColor}
+.gtag.g-m{color:var(--accent)} .gtag.g-a{color:var(--ni)}
+.chart-hint{font-family:var(--f-mono);font-size:10.5px;color:var(--muted)}
+
+/* ---- live price layer ---- */
+.ticker{position:sticky;top:env(safe-area-inset-top,0px);z-index:6;background:var(--tk-bg);color:var(--tk-fg);border-bottom:1px solid var(--tk-line);overflow:hidden;font-family:var(--f-mono);font-size:13px}
+.ticker-in{display:flex;align-items:center;gap:0;padding-left:max(clamp(16px,4vw,60px),env(safe-area-inset-left,0px));padding-right:max(clamp(16px,4vw,60px),env(safe-area-inset-right,0px))}
+.tk-badge{flex:none;display:inline-flex;align-items:center;gap:8px;padding:9px 14px 9px 0;margin-right:12px;border-right:1px solid var(--tk-line);font-weight:500;letter-spacing:.06em;text-transform:uppercase;font-size:11.5px;white-space:nowrap}
+.tk-viewport{flex:1;min-width:0;overflow:hidden;mask-image:linear-gradient(90deg,transparent,#000 24px,#000 calc(100% - 24px),transparent)}
+.tk-track{display:inline-flex;gap:30px;padding-block:9px;white-space:nowrap;animation:tk 110s linear infinite}
+.ticker:hover .tk-track,.ticker:focus-within .tk-track{animation-play-state:paused}
+@keyframes tk{from{transform:translateX(0)}to{transform:translateX(-50%)}}
+.tk-item{display:inline-flex;gap:8px;align-items:baseline}
+.tk-item b{font-weight:500;color:var(--tk-fg)}
+.tk-item .tk-px{font-weight:500}
+.tk-up{color:var(--tk-up)} .tk-dn{color:var(--tk-dn)} .tk-mut{color:var(--tk-mut)}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--tk-up);box-shadow:0 0 0 0 var(--tk-up);animation:pulse 1.8s ease-out infinite}
+.dot.stale{background:var(--warn);animation:none}
+@keyframes pulse{0%{box-shadow:0 0 0 0 color-mix(in srgb,var(--tk-up) 70%,transparent)}100%{box-shadow:0 0 0 9px transparent}}
+.live{background:var(--hl);border:1.5px solid var(--hl-line);border-radius:14px;padding:18px;display:flex;flex-direction:column;gap:14px}
+.live-head{display:flex;flex-wrap:wrap;align-items:center;gap:10px 14px}
+.live-head h2{font-size:24px}
+.age{font-family:var(--f-mono);font-size:12px;color:var(--ink2);background:var(--panel);border:1px solid var(--line);padding:3px 10px;border-radius:999px;display:inline-flex;align-items:center;gap:8px}
+.age .dot{background:var(--up);animation-name:pulse2}
+@keyframes pulse2{0%{box-shadow:0 0 0 0 color-mix(in srgb,var(--up) 60%,transparent)}100%{box-shadow:0 0 0 8px transparent}}
+.tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:12px}
+.tile{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px;display:flex;flex-direction:column;gap:8px;min-width:0;position:relative;overflow:hidden;cursor:pointer;text-align:left;font:inherit;color:inherit}
+.tile:hover{border-color:var(--accent)}
+.tile::after{content:"";position:absolute;inset:0;pointer-events:none;opacity:0;background:var(--flash)}
+.tile.flash-dn{--flash:color-mix(in srgb,var(--down) 22%,transparent)} .tile.flash-up{--flash:color-mix(in srgb,var(--up) 22%,transparent)}
+.tile.go::after{animation:flash 1.6s ease-out 1}
+@keyframes flash{0%{opacity:1}100%{opacity:0}}
+.t-top{display:flex;justify-content:space-between;gap:8px;align-items:baseline}
+.t-name{font-weight:600;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.t-sym{font-family:var(--f-mono);font-size:11px;color:var(--muted)}
+.t-px{font-family:var(--f-display);font-weight:800;font-size:30px;line-height:1;font-variant-numeric:tabular-nums;letter-spacing:-.01em}
+.t-row{display:flex;flex-wrap:wrap;gap:6px;align-items:center;font-family:var(--f-mono);font-size:12px}
+.pill{padding:2px 8px;border-radius:999px;font-weight:500}
+.pill.dn{background:color-mix(in srgb,var(--down) 14%,transparent);color:var(--down)}
+.pill.up{background:color-mix(in srgb,var(--up) 14%,transparent);color:var(--up)}
+.t-sub{font-family:var(--f-mono);font-size:11.5px;color:var(--ink2)}
+.meter{height:6px;border-radius:3px;background:var(--grid);position:relative;overflow:hidden}
+.meter i{position:absolute;left:0;top:0;bottom:0;border-radius:3px;background:var(--accent);width:var(--w);transition:width 1.2s cubic-bezier(.2,.8,.2,1)}
+.t-ath{display:flex;justify-content:space-between;gap:8px;white-space:nowrap;font-family:var(--f-mono);font-size:11.5px;color:var(--muted)}
+.t-ath b{color:var(--down);font-weight:500}
+.focus{background:var(--hl);border:1.5px solid var(--hl-line);border-radius:14px;padding:18px}
+.focus .tbl-wrap{box-shadow:0 1px 0 var(--line)}
+#score td.k,#score th.k{background:color-mix(in srgb,var(--accent) 7%,transparent)}
+#score td.k{font-size:15px}
+@media (prefers-reduced-motion:reduce){.tk-track{animation:none}.tk-viewport{overflow-x:auto}.dot,.age .dot{animation:none}.tile.go::after{animation:none}}
+
+</style>
+
+<div class="ticker" role="region" aria-label="Latest prices ticker"><div class="ticker-in"><span class="tk-badge"><span class="dot" id="tkDot"></span><span id="tkLabel">Latest · USD</span></span><div class="tk-viewport"><div class="tk-track" id="tkTrack"></div></div></div></div>
+<div class="wrap">
+<header>
+  <span class="eyebrow">Memory &amp; storage · DRAM · HBM · NAND · HDD</span>
+  <h1 class="hero"><span class="h-up"><span class="w" style="--i:0">Record</span> <span class="w" style="--i:1">profits,</span></span> <span class="h-dn"><span class="w" style="--i:2">falling</span> <span class="w" style="--i:3">stocks:</span></span> <span class="w" style="--i:4">the</span> <span class="w" style="--i:5">memory</span> <span class="w" style="--i:6">trade</span> <span class="w" style="--i:7">since</span> <span class="w" style="--i:8">June</span></h1>
+  <p class="lede">Seven companies that make the chips and drives AI data centers store data on. Every one posted record revenue in its latest quarter, and every one trades 25–63% below the all-time high it set in June 2026. All prices and financials on this page are in US dollars. This page puts the books next to the share prices and lays out why the market is selling.</p>
+  <div class="stamp">
+    <span class="chip now" id="stampMain"></span>
+    <span class="chip" id="stampUS"></span>
+    <span class="chip" id="stampAsia"></span>
+    <span class="chip" id="stampFX"></span>
+  </div>
+</header>
+
+<section class="live" id="live" aria-label="Latest prices">
+  <div class="live-head"><span class="eyebrow">Latest prices · all in USD</span><span class="age" id="age"><span class="dot"></span><span id="ageTxt"></span></span></div>
+  <div class="tiles" id="tiles"></div>
+  <p class="note" style="margin:0">Bar = price as a share of the all-time high. <b>Tap any card for its price chart</b> (1D to 1Y, candles or line). <span id="feedNote"></span></p>
+</section>
+
+<section class="live" id="ai" aria-label="AI companies">
+  <div class="live-head"><span class="eyebrow">AI companies · USD</span><span class="age"><span class="dot"></span><span class="wAge"></span></span></div>
+  <div class="tiles" id="atiles"></div>
+  <p class="note" style="margin:0">Hyperliquid perps, 24/7. OpenAI (io:OAI) and Anthropic (io:ANTH) are pre-IPO markets run by Entropy: the price is the market's implied company value in billions of dollars (1,920 = $1.92tn), not a share price, and they trade thinly, so treat them as sentiment rather than a valuation. Tap a card for its chart.</p>
+</section>
+
+<section class="live" id="watch" aria-label="Watchlist">
+  <div class="live-head"><span class="eyebrow">Crypto · plus metals and oil · USD</span><span class="age"><span class="dot"></span><span class="wAge"></span></span></div>
+  <div class="tiles" id="wtiles" style="grid-template-columns:repeat(auto-fill,minmax(300px,1fr))"></div>
+  <p class="note" style="margin:0">Hyperliquid perpetual markets, all quoted in USD and trading 24/7. Gold is per troy ounce, silver per ounce, oil per barrel. Crude oil = Brent (xyz:BRENTOIL); WTI oil = NYMEX WTI crude (xyz:CL). Change is versus 24 hours ago. Tap a card for its chart. </p>
+</section>
+
+<section class="live" id="indices" aria-label="Indices">
+  <div class="live-head"><span class="eyebrow">Indices · points</span><span class="age"><span class="dot"></span><span class="wAge"></span></span></div>
+  <div class="tiles" id="itiles"></div>
+  <p class="note" style="margin:0">Hyperliquid index perps, quoted in index points and trading 24/7: S&amp;P 500 (xyz:SP500), Nasdaq 100 (xyz:XYZ100), Nikkei 225 (xyz:JP225) and KOSPI 200 (xyz:KR200, the index SK hynix and Samsung dominate). Outside exchange hours they keep trading, so they can differ from the last official close. Tap a card for its chart.</p>
+</section>
+
+<section class="live" id="etfs" aria-label="ETFs">
+  <div class="live-head"><span class="eyebrow">ETFs · memory, chips and Korea · USD per share</span><span class="age"><span class="dot"></span><span class="wAge"></span></span></div>
+  <div class="tiles" id="etiles"></div>
+  <p class="note" style="margin:0">DRAM (Roundhill Memory), SMH (VanEck Semiconductor), SOXL (3× semiconductors), EWY (MSCI South Korea) and KORU (3× South Korea). SOXL and KORU are 3× leveraged daily funds, so they move about three times as much as what they track. Tap a card for its chart.</p>
+</section>
+
+<section class="focus" id="caps" aria-label="Market capitalisation">
+  <div class="live-head"><span class="eyebrow">Market cap · memory and AI companies · USD</span><span class="age"><span class="dot"></span><span class="wAge"></span></span></div>
+  <div class="cap-sum" id="capSum"></div>
+  <div class="tbl-wrap"><table id="capTbl"></table></div>
+  <p class="note" style="margin:0">Market cap = live price × shares outstanding. Share counts: Micron, SanDisk, Seagate, Western Digital, Nvidia and Applied Optoelectronics from their latest SEC filings (Aug–Oct 2026); SpaceX 13.58bn, Alphabet 12.23bn (all classes), Meta 2.55bn (all classes) and Cerebras 238m shares; SK hynix and Samsung implied from Korea Exchange market caps (Samsung includes its preferred shares); Kioxia after its 1:3 split on 1 Oct. Buybacks change these slowly, so treat caps as accurate to a few percent. Last quarter revenue is each company’s most recent reported quarter (SEC filings and company releases; Samsung is its preliminary July–September figure and covers the whole company, not just memory). Won and yen revenue are converted at that quarter’s average exchange rate, so YoY growth is the company’s reported rate in its own currency. Price/sales = market cap ÷ (last quarter revenue × 4; CXMT’s half-year revenue × 2). CXMT only reports half-yearly so far; its share count (~65bn) is implied from its 3.2tn-yuan debut value at 49 yuan a share, so its cap is approximate. OpenAI and Anthropic are private: their “market cap” is the implied value traded on Hyperliquid, and revenue is not published. Next report dates are the companies’ announced dates where available. Tap a row for its chart.</p>
+</section>
+
+<section class="focus" id="score-sec">
+  <div class="sec-head"><span class="eyebrow">Key table · scoreboard</span><h2>Price, peak and valuation</h2></div>
+  <div class="tbl-wrap"><table id="score"></table></div>
+  <p class="note">Prices are the latest available, not June figures. June is when each stock set its all-time high; that column shows the peak and its date so you can measure the drawdown. Korean and Japanese shares are converted to USD at each day’s exchange rate, so the USD peak can fall on a different day than the local one, and a stronger won since June has softened the USD drawdown for SK hynix and Samsung. After-hours is the latest US extended-session trade. "Run-rate P/E" = market cap ÷ (latest guided or reported quarterly net income × 4); it assumes profits hold flat for a year, which is exactly what the market doubts. Market caps are approximate (share counts from filings, buybacks ongoing).</p>
+</section>
+
+<section>
+  <div class="sec-head"><span class="eyebrow">Per company</span><h2>Quarterly revenue and net income, last 3 years</h2></div>
+  <div class="tabs" role="tablist" id="tabs"></div>
+  <div class="detail">
+    <div class="panel" style="display:flex;flex-direction:column;gap:12px;min-width:0">
+      <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px;align-items:baseline">
+        <h3 id="chartTitle"></h3>
+        <div class="legend"><span><i style="background:var(--rev)"></i>Revenue</span><span><i style="background:var(--ni)"></i>Net income</span><span><i style="background:var(--guide)"></i>Guidance</span></div>
+      </div>
+      <div id="chart" style="width:100%"></div>
+      <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px;align-items:baseline"><h3 style="font-size:14px">Operating and net margin</h3><div class="legend"><span><i style="background:var(--rev)"></i>Operating margin</span><span><i style="background:var(--ni)"></i>Net margin</span></div></div>
+      <div id="margin" style="width:100%"></div>
+      <p class="note" id="chartNote"></p>
+    </div>
+    <div class="panel facts" id="facts"></div>
+  </div>
+  <div class="tbl-wrap"><table id="qtable"></table></div>
+</section>
+
+<section>
+  <div class="sec-head"><span class="eyebrow">Data check · re-verified 15 Oct 2026</span><h2>How each company's numbers were checked</h2>
+  <p class="lede">Every quarter was re-pulled and cross-checked against annual totals. Where a figure looks odd, it is what the company reported, and the reason is below.</p></div>
+  <div class="tbl-wrap"><table class="chk">
+  <thead><tr><th>Company</th><th>Source checked</th><th>Cross-check</th><th>Anomalies and why</th></tr></thead>
+  <tbody>
+  <tr><td class="co">Micron</td><td>SEC filings (XBRL), FQ4-26 8-K</td><td>4 quarters sum to FY totals; FQ4-26 matches 8-K exactly</td><td>FQ2-24 net &gt; operating profit (tax benefit)</td></tr>
+  <tr><td class="co">SK hynix</td><td>Company releases 4Q23, 4Q24, 4Q25, 1Q26, 2Q26</td><td>Quarters sum to FY23, FY24, FY25 revenue, OP and net</td><td><b>2Q26 net ₩93.9tn &gt; revenue ₩79.3tn</b>: ~₩40tn Kioxia-stake gains, confirmed in the company release (118% net margin). 1Q25, 3Q25, 1Q26 also lifted by Kioxia gains</td></tr>
+  <tr><td class="co">Samsung</td><td>Company releases, Korea Times, JoongAng, Notebookcheck</td><td>2024 and 2025 quarters sum to FY; Jan–Sep 2026 total matches</td><td>Q1-26 net corrected to ₩47.22tn (was an estimate). 2023 quarters sum to ₩15.3tn vs ₩15.5tn reported (minority-interest rounding). Q3-26 net not yet released</td></tr>
+  <tr><td class="co">SanDisk</td><td>SEC filings, FQ4-26 release</td><td>FY26 = 4 quarters; FQ4 matches release</td><td>FQ3-25 −$1.9bn: goodwill impairment</td></tr>
+  <tr><td class="co">Kioxia</td><td>Reuters table, TrendForce, Blocks &amp; Files</td><td>FY25 revenue ¥2,337.6bn and net ¥554.5bn reconcile with quarters</td><td>3 quarters derived from totals (marked ≈). Quarterly operating profit not published in sources used</td></tr>
+  <tr><td class="co">Seagate</td><td>SEC filings, FQ4-26 8-K</td><td>FY = 4 quarters; FQ4 matches 8-K</td><td>FQ4-24 net &gt; operating profit (non-operating/tax items)</td></tr>
+  <tr><td class="co">Western Digital</td><td>SEC filings, FQ4-26 release</td><td>FY25 and FY26 restated HDD-only totals reconcile</td><td><b>Corrected</b>: now starts FQ1-25 and uses continuing-operations net income (earlier version mixed in flash-era profit). FY26 GAAP net inflated by SanDisk-share gains</td></tr>
+  </tbody></table></div>
+  <p class="note">Korean and Japanese figures are converted to USD at each quarter's average exchange rate; hover any quarter to see the originally reported won or yen amount.</p>
+</section>
+
+<section>
+  <div class="sec-head"><span class="eyebrow">What happened</span><h2>Why the stocks fell while earnings rose</h2>
+  <p class="lede">No company has cut guidance. The selling is about what investors expect profits to look like in 2027–2028, plus a set of market shocks stacked on top of each other.</p></div>
+  <div class="grid2">
+    <div class="panel"><ol class="tl" id="timeline"></ol></div>
+    <div class="panel case">
+      <h3>The six reasons, ranked</h3>
+      <ul>
+        <li><b>Peak-earnings fear.</b> Memory is the most cyclical part of semis. Margins of 75–87% are far above any prior cycle, and investors sell before the turn, not after it. Goldman's desk says peak-earnings worry is capping valuations. This is why the stocks trade at 4–8× run-rate earnings.</li>
+        <li><b>Supply is coming.</b> SK hynix (₩100tn central-Korea plan, Yongin cleanroom early 2027, M15X pulled in), Samsung (₩140tn group plan), Micron (new cleanrooms in 2028) and Toshiba in HDDs are all adding capacity. TrendForce sees DRAM/HBM supply up 27% in 2H27.</li>
+        <li><b>China.</b> CXMT reached ~8% of global DRAM revenue in Q1 2026 (Counterpoint), listed in July, and on 12–13 Oct said it has a 4F² cell design for DDR5 server modules by end-2026. That design packs ~50% more bits per wafer. It does not touch HBM, and US tool export limits still apply.</li>
+        <li><b>AI capex durability.</b> Nvidia's reported ~$250bn backstop for an OpenAI project (circular financing), Meta reselling compute, and Anthropic's CEO calling for slower capability growth (14 Sep) all hit the AI-demand story that memory sits on.</li>
+        <li><b>Rates.</b> The Bank of Korea hiked in July. US September CPI ran hot and odds of an October Fed hike jumped from 22% to 46% (LSEG). Higher rates compress cyclical multiples.</li>
+        <li><b>Flows.</b> Samsung and SK hynix were about half of the KOSPI. Their ₩55tn of buybacks ran ahead of schedule and ended in early–mid October, foreign funds sold for five straight sessions, and the KOSPI hit sidecars and halts repeatedly.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="sec-head"><span class="eyebrow">Outlook</span><h2>What the order books say</h2></div>
+  <div class="grid2">
+    <div class="panel case">
+      <h3><span class="mark" style="background:var(--up)"></span>Bull case: demand is contracted</h3>
+      <ul>
+        <li><b>Micron:</b> ~75% of 2027 output already committed; most sales talks now about 2028. 26 multi-year customer agreements expected to cover &gt;35% of revenue through 2030. CEO: 2027 and 2028 tighter than 2026, "no line of sight" to balance. $12.75bn in customer deposits.</li>
+        <li><b>HBM pricing:</b> TrendForce sees 2027 HBM contract prices up 70–140%; Samsung is seeking more than double current HBM4 prices from Nvidia and Broadcom.</li>
+        <li><b>Near-term prices still rising:</b> 4Q26 conventional DRAM contract +10–15% QoQ, NAND +15–20% (TrendForce, 30 Sep).</li>
+        <li><b>LTAs:</b> SK hynix has long-term agreements with ~10 customers; Kioxia targets 50% LTA coverage of 2028 volume; SanDisk signed 5 more contracts since April; Seagate nearline capacity allocated through 2027.</li>
+        <li><b>Balance sheets:</b> Micron $73.5bn cash vs $5.2bn debt; SK hynix ₩69.4tn net cash; Samsung ₩167.6tn net cash; SanDisk zero debt.</li>
+      </ul>
+    </div>
+    <div class="panel case">
+      <h3><span class="mark" style="background:var(--down)"></span>Bear case: price, not volume, is the risk</h3>
+      <ul>
+        <li><b>Revenue growth is mostly price.</b> At SanDisk two-thirds of the last sequential jump came from price, one-third from volume. When prices stop rising, growth stops fast.</li>
+        <li><b>Price ceilings:</b> some LTAs signed after Q2 2026 cap further increases, so contracts protect volume more than margin.</li>
+        <li><b>Demand destruction:</b> cloud firms are testing smaller HBM loads in custom AI chips; Nvidia is reportedly testing reduced HBM specs for Rubin Ultra. Consumer is already weak: SanDisk consumer revenue fell 32% QoQ, Samsung's phone unit lost money on component costs.</li>
+        <li><b>Execution misses:</b> SK hynix Q2 revenue and operating profit missed consensus by ~5%; Samsung Q3 revenue missed by ~3%. At these levels "record" is not enough.</li>
+        <li><b>Sensitivity:</b> halving expected earnings doubles the P/E with no price change. A 5× P/E on peak earnings is not cheap if earnings fall 50%.</li>
+      </ul>
+    </div>
+  </div>
+  <div class="panel scen">
+    <h3>If revenues stay strong: a quick stress test</h3>
+    <p class="note">Move the slider to assume how far annual profits fall from today's run-rate (latest quarter × 4). Positive values mean profits keep growing. The table shows the P/E at today's price.</p>
+    <div class="slider-row"><label for="shock" class="eyebrow">Change in profit vs run-rate</label><input type="range" id="shock" min="-80" max="50" step="5" value="0"><span class="big" id="shockVal">0%</span></div>
+    <div class="tbl-wrap"><table id="scenTbl"></table></div>
+    <p class="callout">Reading it: at today's prices the memory makers are priced as if profits fall by roughly half or more within two years, which is what happened in every past cycle. The HDD makers (Seagate, Western Digital) trade at roughly 20–23× because their supply is tight and their pricing is more stable. If memory profits only drift down 20–30%, the stocks look cheap; if the 2023-style collapse repeats, they do not.</p>
+  </div>
+</section>
+
+<section>
+  <div class="sec-head"><span class="eyebrow">Sources</span><h2>Where the numbers come from</h2></div>
+  <ul class="src">
+    <li><a href="https://www.sec.gov/Archives/edgar/data/0000723125/000072312526000018/a2026q4ex991-pressrelease.htm" target="_blank" rel="noopener">Micron FQ4-26 press release (SEC 8-K)</a></li>
+    <li><a href="https://www.businesswire.com/news/home/20260805455789/en/Sandisk-Reports-Fiscal-Fourth-Quarter-2026-Financial-Results/" target="_blank" rel="noopener">SanDisk FQ4-26 results</a></li>
+    <li><a href="https://www.westerndigital.com/en-gb/company/newsroom/press-releases/2026/2026-08-05-wd-reports-fiscal-fourth-quarter-and-fiscal-year-2026-financial-results" target="_blank" rel="noopener">Western Digital FQ4-26 results</a></li>
+    <li><a href="https://www.sec.gov/Archives/edgar/data/0001137789/000113778926000153/stxq42026pressreleasefinan.htm" target="_blank" rel="noopener">Seagate FQ4-26 press release (SEC 8-K)</a></li>
+    <li><a href="https://news.skhynix.com/en/q2-2026-business-results/" target="_blank" rel="noopener">SK hynix 2Q26 results</a> · <a href="https://www.storagenewsletter.com/?p=302112" target="_blank" rel="noopener">1Q26 / FY25</a></li>
+    <li><a href="https://finance.biggo.com/news/1d010355-c8e8-481e-a9b7-4f46700df86b" target="_blank" rel="noopener">SK hynix Kioxia-stake gains (BigGo)</a></li>
+    <li><a href="https://news.samsung.com/global/samsung-electronics-announces-second-quarter-2026-results" target="_blank" rel="noopener">Samsung Q2 2026 results</a> · <a href="https://stockhub.kr/en/insights/view_1791420339349_rirmz2bfh" target="_blank" rel="noopener">Q3 prelim vs consensus</a></li>
+    <li><a href="https://www.koreajoongangdaily.com/business/samsung-electronics-reports-record-operating-profit-due-to-memory-demand/11988951" target="_blank" rel="noopener">Samsung Q4 2025 (JoongAng)</a> · <a href="https://www.sammobile.com/news/samsung-q1-2026-profit-hits-record-high-ai-chip-boom/" target="_blank" rel="noopener">Q1 2026 (SamMobile)</a> · <a href="https://www.kucoin.com/news/flash/samsung-q2-2026-profit-surges-1299-9-to-record-high" target="_blank" rel="noopener">Q2 net profit</a></li>
+    <li><a href="https://www.trendforce.com/news/2026/07/31/news-kioxia-1qfy26-gross-margin-hits-80-reaffirms-50-lta-target-for-2028/" target="_blank" rel="noopener">Kioxia 1QFY26 (TrendForce)</a> · <a href="https://www.nippon.com/en/news/yjj2026073101155/" target="_blank" rel="noopener">Nippon.com</a> · <a href="https://www.blocksandfiles.com/flash/2026/02/13/high-nand-selling-prices-help-kioxias-quarterly-revenue/4091286" target="_blank" rel="noopener">3QFY25</a> · <a href="https://www.trendforce.com/news/2025/11/13/news-kioxia-quarterly-profit-tumbles-62-yoy-but-signals-bottom-with-record-3qfy25-sales-forecast/" target="_blank" rel="noopener">2QFY25</a></li>
+    <li>SEC XBRL company facts (MU, SNDK, WDC, STX quarterly history) · Yahoo Finance daily prices</li>
+    <li><a href="https://www.benzinga.com/markets/tech/26/10/62311094/micron-forward-pe-sk-hynix-memory-stocks-valuation" target="_blank" rel="noopener">Benzinga: forward P/E and analyst moves</a></li>
+    <li><a href="https://thenextweb.com/news/micron-record-quarter-memory-shortage-2028" target="_blank" rel="noopener">Micron call: shortage into 2028</a></li>
+    <li><a href="https://invezz.com/news/2026/10/14/why-are-micron-sk-hynix-sandisk-stocks-falling-on-wednesday/" target="_blank" rel="noopener">Invezz: CPI and CXMT, 14 Oct</a></li>
+    <li><a href="https://www.kucoin.com/news/flash/memory-chip-stocks-face-continued-sell-off-amid-repurchase-end-and-chinese-rivals-tech-advances" target="_blank" rel="noopener">Buyback end and China (13 Oct)</a> · <a href="https://en.edaily.co.kr/news/eda202609025488" target="_blank" rel="noopener">Buyback pace (Edaily)</a></li>
+    <li><a href="https://financefeeds.com/samsung-stock-232000-won-cxmt-4f2-dram-kospi-sidecar-bull-285500-bear-215000/" target="_blank" rel="noopener">FinanceFeeds: Samsung after CXMT</a></li>
+    <li><a href="https://www.benzinga.com/trading-ideas/movers/26/10/62303712/micron-sk-hynix-sandisk-wipe-out-100-billion-memory-selloff" target="_blank" rel="noopener">Benzinga: $100bn memory rout</a></li>
+    <li><a href="https://247wallst.com/investing/2026/09/14/memory-stocks-lead-ai-selloff-as-anthropic-and-openai-chiefs-urge-slower-development-micron-and-sandisk-sink-6-sk-hynix-drops-7/" target="_blank" rel="noopener">24/7 Wall St: 14 Sep selloff</a> · <a href="https://247wallst.com/investing/2026/10/02/seagate-tumbles-10-western-digital-drops-7-as-toshiba-moves-to-double-hard-disk-output/" target="_blank" rel="noopener">Toshiba HDD expansion</a></li>
+    <li><a href="https://www.marketscreener.com/news/sk-hynix-samsung-shares-slide-dragging-kospi-nearly-8-lower-ce7f5fd2d08cfe24" target="_blank" rel="noopener">KOSPI −7.9%, 2 Jul</a> · <a href="https://www.kaohooninternational.com/?p=586822" target="_blank" rel="noopener">BoK hike, 16 Jul</a> · <a href="https://www.hl.co.uk/news/samsung-sk-hynix-slide-amid-nvidia-financing-worries-china-competition" target="_blank" rel="noopener">Nvidia financing worries, 28 Jul</a></li>
+    <li><a href="https://en.ilsole24ore.com/art/sk-hynix-posts-record-net-profit-in-the-second-quarter-but-its-share-price-plummets-AJ7a0rY" target="_blank" rel="noopener">SK hynix Q2 miss and reaction</a></li>
+    <li><a href="https://biz.heraldcorp.com/article/10852833" target="_blank" rel="noopener">TrendForce HBM 2027 (Herald)</a> · <a href="https://www.sammyfans.com/2026/10/06/samsung-hbm4-price-talks-enter-final-stage/amp/" target="_blank" rel="noopener">Samsung HBM4 talks</a> · <a href="https://www.nextmsc.com/industry-deep-dive/dram-nand-price-tracker-quarterly" target="_blank" rel="noopener">DRAM/NAND price tracker</a></li>
+  </ul>
+  <p class="note">Research, not investment advice. Figures are GAAP / K-IFRS / IFRS as reported unless marked; "≈" marks values derived from reported totals or growth rates. Samsung Q3 2026 is preliminary (net profit not yet disclosed). SK hynix Q3 2026 and SanDisk, Seagate, WD, Kioxia September-quarter results are due in late October.</p>
+</section>
+</div>
+<div class="cm" id="cm" hidden role="dialog" aria-modal="true" aria-labelledby="cmName">
+  <div class="cm-box">
+    <div class="cm-head">
+      <div class="cm-title"><span class="eyebrow" id="cmSub"></span><h3 id="cmName"></h3><div class="cm-px" id="cmPx"></div></div>
+      <button class="cm-close" id="cmClose" type="button" aria-label="Close chart">×</button>
+    </div>
+    <div class="cm-bar"><div class="seg" id="cmTf" role="group" aria-label="Time frame"></div>
+      <div class="seg" id="cmType" role="group" aria-label="Chart type"><button type="button" data-t="candle" aria-pressed="true">Candles</button><button type="button" data-t="line" aria-pressed="false">Line</button></div></div>
+    <div class="cm-chart" id="cmChart"><div class="cm-msg" id="cmMsg">Loading…</div></div>
+    <div class="cm-stats" id="cmStats"></div>
+    <div class="cm-foot"><p class="note" id="cmNote" style="margin:0"></p><button class="btn" id="cmFin" type="button">View financials ↓</button></div>
+  </div>
+</div>
+<div class="tip" id="tip" hidden></div>
+
+<script src="https://cdn.jsdelivr.net/npm/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
+<script>
+const LIVE = {"fx": {"KRW": 1326.07, "JPY": 156.832}, "co": {"MU": {"px": 857.81, "pxLocal": 857.81, "localCur": "USD", "time": 1792688065, "ext": null, "prev": 913.67, "hi": 1213.56, "hiD": "2026-06-25", "hiLocal": 1213.56005859375, "hiLocalD": "2026-06-25", "sep1": 933.44, "low1y": 198.47, "series": [["251022", 198.47], ["251027", 220.1], ["251030", 224.01], ["251104", 218.03], ["251107", 237.92], ["251112", 244.9], ["251117", 241.95], ["251120", 201.37], ["251125", 224.53], ["251201", 240.46], ["251204", 226.65], ["251209", 252.42], ["251212", 241.14], ["251217", 225.52], ["251222", 276.59], ["251226", 284.79], ["251231", 285.41], ["260106", 343.43], ["260109", 345.09], ["260114", 333.35], ["260120", 365.0], ["260123", 399.65], ["260128", 435.28], ["260202", 437.8], ["260205", 382.89], ["260210", 373.25], ["260213", 411.66], ["260219", 417.35], ["260224", 418.01], ["260227", 412.37], ["260304", 400.77], ["260309", 389.32], ["260312", 405.35], ["260317", 461.69], ["260320", 422.9], ["260325", 382.09], ["260330", 321.8], ["260402", 366.24], ["260408", 406.73], ["260413", 426.56], ["260416", 457.23], ["260421", 449.38], ["260424", 496.72], ["260429", 518.46], ["260504", 576.45], ["260507", 646.63], ["260512", 766.58], ["260515", 724.66], ["260520", 731.99], ["260526", 895.88], ["260529", 971.0], ["260603", 1079.57], ["260608", 949.28], ["260611", 995.87], ["260616", 1020.76], ["260622", 1211.38], ["260625", 1213.56], ["260630", 1154.29], ["260706", 984.75], ["260709", 991.64], ["260714", 983.12], ["260717", 848.95], ["260722", 959.48], ["260727", 900.2], ["260730", 874.66], ["260804", 892.67], ["260807", 877.57], ["260812", 911.29], ["260817", 1011.75], ["260820", 974.33], ["260825", 932.97], ["260828", 932.86], ["260902", 956.08], ["260908", 1000.26], ["260911", 975.26], ["260916", 926.55], ["260921", 1043.96], ["260924", 1080.53], ["260929", 1065.08], ["261002", 1074.89], ["261007", 1088.0], ["261012", 989.04], ["261015", 931.24], ["261020", 896.07], ["261022", 857.81]]}, "SNDK": {"px": 1261.64, "pxLocal": 1261.64, "localCur": "USD", "time": 1792688058, "ext": null, "prev": 1378.22, "hi": 2335.0, "hiD": "2026-06-25", "hiLocal": 2335.0, "hiLocalD": "2026-06-25", "sep1": 1536.87, "low1y": 146.95, "series": [["251022", 146.95], ["251027", 176.49], ["251030", 195.82], ["251104", 194.57], ["251107", 239.48], ["251112", 283.1], ["251117", 265.88], ["251120", 195.96], ["251125", 220.5], ["251201", 210.17], ["251204", 213.31], ["251209", 219.46], ["251212", 206.18], ["251217", 206.83], ["251222", 241.05], ["251226", 250.05], ["251231", 237.38], ["260106", 349.63], ["260109", 377.41], ["260114", 387.81], ["260120", 453.12], ["260123", 473.83], ["260128", 527.63], ["260202", 665.24], ["260205", 576.2], ["260210", 541.64], ["260213", 626.56], ["260219", 621.09], ["260224", 638.52], ["260227", 635.36], ["260304", 599.06], ["260309", 588.73], ["260312", 618.82], ["260317", 720.17], ["260320", 709.71], ["260325", 677.86], ["260330", 572.5], ["260402", 701.59], ["260408", 780.9], ["260413", 952.5], ["260416", 919.47], ["260421", 903.49], ["260424", 989.9], ["260429", 1064.21], ["260504", 1255.86], ["260507", 1339.96], ["260512", 1452.02], ["260515", 1407.61], ["260520", 1392.56], ["260526", 1589.55], ["260529", 1694.98], ["260603", 1831.5], ["260608", 1642.0], ["260611", 1881.51], ["260616", 1991.55], ["260622", 2273.73], ["260625", 2335.0], ["260630", 2273.73], ["260706", 1744.43], ["260709", 1858.27], ["260714", 1757.82], ["260717", 1354.82], ["260722", 1599.27], ["260727", 1278.23], ["260730", 1279.96], ["260804", 1427.62], ["260807", 1212.21], ["260812", 1344.29], ["260817", 1786.85], ["260820", 1600.62], ["260825", 1480.77], ["260828", 1484.98], ["260902", 1553.4], ["260908", 1737.99], ["260911", 1633.35], ["260916", 1519.97], ["260921", 1766.64], ["260924", 1753.62], ["260929", 1729.76], ["261002", 1719.99], ["261007", 1692.42], ["261012", 1487.33], ["261015", 1394.83], ["261020", 1365.38], ["261022", 1261.64]]}, "WDC": {"px": 349.95, "pxLocal": 349.953, "localCur": "USD", "time": 1792688065, "ext": null, "prev": 378.51, "hi": 746.23, "hiD": "2026-06-18", "hiLocal": 746.22998046875, "hiLocalD": "2026-06-18", "sep1": 450.44, "low1y": 120.47, "series": [["251022", 120.47], ["251027", 126.67], ["251030", 138.13], ["251104", 152.18], ["251107", 162.96], ["251112", 166.11], ["251117", 162.45], ["251120", 140.23], ["251125", 155.41], ["251201", 163.54], ["251204", 161.0], ["251209", 169.54], ["251212", 176.34], ["251217", 166.26], ["251222", 176.76], ["251226", 181.54], ["251231", 172.27], ["260106", 219.38], ["260109", 200.46], ["260114", 215.0], ["260120", 222.97], ["260123", 236.39], ["260128", 279.7], ["260202", 270.23], ["260205", 260.19], ["260210", 262.56], ["260213", 281.58], ["260219", 284.67], ["260224", 270.57], ["260227", 279.7], ["260304", 261.3], ["260309", 262.06], ["260312", 261.18], ["260317", 313.81], ["260320", 293.1], ["260325", 296.14], ["260330", 251.67], ["260402", 294.97], ["260408", 338.78], ["260413", 350.16], ["260416", 361.69], ["260421", 383.81], ["260424", 404.0], ["260429", 412.76], ["260504", 442.36], ["260507", 463.91], ["260512", 488.74], ["260515", 482.02], ["260520", 459.62], ["260526", 524.65], ["260529", 531.21], ["260603", 594.11], ["260608", 526.93], ["260611", 529.29], ["260616", 681.08], ["260622", 732.62], ["260625", 675.39], ["260630", 638.72], ["260706", 577.46], ["260709", 578.05], ["260714", 563.32], ["260717", 477.22], ["260722", 556.67], ["260727", 497.92], ["260730", 533.04], ["260804", 548.56], ["260807", 434.3], ["260812", 454.1], ["260817", 536.01], ["260820", 469.05], ["260825", 450.75], ["260828", 459.45], ["260902", 448.9], ["260908", 477.3], ["260911", 447.18], ["260916", 416.97], ["260921", 448.17], ["260924", 450.31], ["260929", 453.48], ["261002", 415.29], ["261007", 405.42], ["261012", 386.94], ["261015", 356.45], ["261020", 364.32], ["261022", 349.95]]}, "STX": {"px": 633.66, "pxLocal": 633.66, "localCur": "USD", "time": 1792688064, "ext": null, "prev": 696.89, "hi": 1094.04, "hiD": "2026-06-22", "hiLocal": 1094.0400390625, "hiLocalD": "2026-06-22", "sep1": 816.64, "low1y": 215.05, "series": [["251022", 215.05], ["251027", 230.32], ["251030", 268.34], ["251104", 250.38], ["251107", 279.35], ["251112", 283.26], ["251117", 261.38], ["251120", 240.5], ["251125", 261.89], ["251201", 270.1], ["251204", 265.63], ["251209", 282.86], ["251212", 287.64], ["251217", 277.65], ["251222", 282.85], ["251226", 286.22], ["251231", 275.39], ["260106", 330.42], ["260109", 304.01], ["260114", 312.28], ["260120", 325.99], ["260123", 346.1], ["260128", 442.93], ["260202", 432.95], ["260205", 405.45], ["260210", 396.23], ["260213", 425.99], ["260219", 408.97], ["260224", 396.02], ["260227", 407.84], ["260304", 375.01], ["260309", 374.33], ["260312", 373.98], ["260317", 421.09], ["260320", 411.23], ["260325", 413.22], ["260330", 362.43], ["260402", 429.36], ["260408", 496.3], ["260413", 513.28], ["260416", 531.81], ["260421", 559.9], ["260424", 586.25], ["260429", 643.3], ["260504", 738.54], ["260507", 766.44], ["260512", 808.8], ["260515", 795.47], ["260520", 751.07], ["260526", 845.76], ["260529", 879.8], ["260603", 940.69], ["260608", 876.77], ["260611", 868.09], ["260616", 1031.34], ["260622", 1094.04], ["260625", 1025.36], ["260630", 965.0], ["260706", 868.26], ["260709", 890.09], ["260714", 878.31], ["260717", 787.66], ["260722", 908.1], ["260727", 816.99], ["260730", 851.68], ["260804", 845.35], ["260807", 812.76], ["260812", 878.21], ["260817", 994.79], ["260820", 850.24], ["260825", 821.67], ["260828", 829.76], ["260902", 808.54], ["260908", 904.38], ["260911", 830.17], ["260916", 783.18], ["260921", 877.33], ["260924", 905.92], ["260929", 913.45], ["261002", 848.99], ["261007", 807.57], ["261012", 753.25], ["261015", 690.81], ["261020", 675.13], ["261022", 633.66]]}, "SKH": {"px": 922.27, "pxLocal": 1223000.0, "localCur": "KRW", "time": 1792650604, "ext": null, "prev": 975.82, "hi": 1896.62, "hiD": "2026-06-22", "hiLocal": 2919000.0, "hiLocalD": "2026-06-22", "sep1": 1233.19, "low1y": 333.25, "series": [["251022", 336.62], ["251027", 372.31], ["251030", 398.87], ["251104", 410.09], ["251107", 400.58], ["251112", 422.65], ["251117", 418.93], ["251120", 389.46], ["251125", 351.9], ["251128", 362.67], ["251203", 376.19], ["251208", 392.03], ["251211", 384.6], ["251216", 361.16], ["251219", 371.01], ["251224", 397.65], ["251230", 453.75], ["260106", 502.23], ["260109", 513.08], ["260114", 503.73], ["260119", 519.17], ["260122", 515.42], ["260127", 555.18], ["260130", 636.22], ["260204", 622.11], ["260209", 606.54], ["260212", 614.88], ["260220", 655.5], ["260225", 706.95], ["260303", 646.57], ["260306", 624.53], ["260311", 648.43], ["260316", 648.58], ["260319", 672.98], ["260324", 663.81], ["260327", 618.55], ["260401", 593.22], ["260406", 587.59], ["260409", 677.4], ["260414", 750.64], ["260417", 763.23], ["260422", 827.49], ["260427", 877.12], ["260430", 872.45], ["260507", 1136.93], ["260512", 1229.08], ["260515", 1218.07], ["260520", 1163.51], ["260526", 1363.06], ["260529", 1560.23], ["260604", 1498.95], ["260609", 1451.69], ["260612", 1416.92], ["260617", 1652.66], ["260622", 1896.62], ["260625", 1886.22], ["260630", 1711.21], ["260703", 1572.5], ["260708", 1380.92], ["260713", 1231.89], ["260716", 1245.56], ["260722", 1240.15], ["260727", 1240.06], ["260730", 930.59], ["260804", 1104.01], ["260807", 999.79], ["260812", 1061.8], ["260818", 1175.74], ["260821", 1243.9], ["260826", 1220.1], ["260831", 1224.92], ["260903", 1177.5], ["260908", 1338.85], ["260911", 1344.04], ["260916", 1277.79], ["260921", 1359.85], ["260928", 1300.42], ["261001", 1347.21], ["261007", 1286.7], ["261013", 1076.62], ["261016", 948.58], ["261021", 977.39], ["261022", 922.27]]}, "SEC": {"px": 161.76, "pxLocal": 214500.0, "localCur": "KRW", "time": 1792650611, "ext": null, "prev": 168.54, "hi": 237.7, "hiD": "2026-06-02", "hiLocal": 362500.0, "hiLocalD": "2026-06-18", "sep1": 190.11, "low1y": 64.35, "series": [["251022", 68.93], ["251027", 70.98], ["251030", 73.1], ["251104", 73.41], ["251107", 67.62], ["251112", 70.62], ["251117", 69.55], ["251120", 68.62], ["251125", 67.33], ["251128", 68.77], ["251203", 71.22], ["251208", 74.4], ["251211", 73.04], ["251216", 70.05], ["251219", 72.1], ["251224", 75.14], ["251230", 83.57], ["260106", 96.09], ["260109", 95.86], ["260114", 95.25], ["260119", 101.46], ["260122", 103.97], ["260127", 110.69], ["260130", 112.34], ["260204", 116.89], ["260209", 113.79], ["260212", 123.67], ["260220", 131.31], ["260225", 141.32], ["260303", 134.34], ["260306", 127.2], ["260311", 129.01], ["260316", 125.65], ["260319", 133.2], ["260324", 127.71], ["260327", 119.4], ["260401", 125.42], ["260406", 128.06], ["260409", 138.47], ["260414", 140.53], ["260417", 146.15], ["260422", 147.16], ["260427", 152.41], ["260430", 149.59], ["260507", 186.62], ["260512", 186.87], ["260515", 181.14], ["260520", 184.03], ["260526", 198.61], ["260529", 212.0], ["260604", 229.28], ["260609", 211.04], ["260612", 212.54], ["260617", 227.15], ["260622", 229.69], ["260625", 231.82], ["260630", 215.68], ["260703", 200.7], ["260708", 184.59], ["260713", 169.93], ["260716", 172.43], ["260722", 176.53], ["260727", 173.45], ["260730", 145.71], ["260804", 168.02], ["260807", 162.41], ["260812", 180.38], ["260818", 189.94], ["260821", 202.4], ["260826", 189.01], ["260831", 190.25], ["260903", 184.45], ["260908", 201.24], ["260911", 192.48], ["260916", 184.15], ["260921", 199.46], ["260928", 198.59], ["261001", 202.85], ["261007", 200.51], ["261013", 173.09], ["261016", 160.71], ["261021", 168.81], ["261022", 161.76]]}, "KIOX": {"px": 80.31, "pxLocal": 12595.0, "localCur": "JPY", "time": 1792650600, "ext": null, "prev": 86.14, "hi": 224.44, "hiD": "2026-06-19", "hiLocal": 36233.33203125, "hiLocalD": "2026-06-22", "sep1": 106.12, "low1y": 16.04, "series": [["251022", 16.04], ["251027", 21.36], ["251030", 23.79], ["251105", 22.89], ["251110", 28.87], ["251113", 28.06], ["251118", 22.03], ["251121", 21.25], ["251127", 19.31], ["251202", 19.75], ["251205", 20.26], ["251210", 20.13], ["251215", 19.67], ["251218", 20.39], ["251223", 21.15], ["251226", 24.38], ["260105", 24.1], ["260108", 27.65], ["260114", 27.81], ["260119", 32.18], ["260122", 37.68], ["260127", 39.85], ["260130", 46.49], ["260204", 44.72], ["260209", 40.07], ["260213", 49.83], ["260218", 46.62], ["260224", 48.01], ["260227", 45.36], ["260304", 40.66], ["260309", 37.94], ["260312", 44.52], ["260317", 45.27], ["260323", 44.93], ["260326", 44.26], ["260331", 40.11], ["260403", 45.67], ["260408", 57.99], ["260413", 65.47], ["260416", 70.92], ["260421", 68.48], ["260424", 72.16], ["260430", 79.76], ["260508", 94.56], ["260513", 106.64], ["260518", 107.96], ["260521", 116.0], ["260526", 130.74], ["260529", 137.82], ["260603", 162.73], ["260608", 149.59], ["260611", 157.04], ["260616", 196.82], ["260619", 224.44], ["260624", 190.61], ["260629", 182.08], ["260702", 157.45], ["260707", 148.64], ["260710", 158.08], ["260715", 150.34], ["260721", 124.72], ["260724", 113.96], ["260729", 78.34], ["260803", 104.02], ["260806", 102.56], ["260812", 104.33], ["260817", 129.37], ["260820", 111.09], ["260825", 107.31], ["260828", 100.22], ["260902", 106.97], ["260907", 128.97], ["260910", 125.34], ["260915", 111.1], ["260918", 116.51], ["260928", 112.99], ["261001", 120.94], ["261006", 118.35], ["261009", 110.75], ["261015", 81.45], ["261020", 83.02], ["261022", 80.31]]}}, "generated": 1792688068};
+// q: [label, fiscal name, revenue, netIncome, flag]  flag: 'g' guidance, 'p' prelim, 'a' approx
+const CO = [
+ {id:'MU', name:'Micron', tick:'MU · Nasdaq', cur:'$', unit:'bn',
+  latest:'FQ4-26 (Jun–Aug)', yoy:379, qoq:31, om:80.7, nm:69.5, runNI:43.9, cur2:'USD',
+  q:[['Nov 22',"FQ1'23",4.085,-0.195,null,-0.209],
+     ['Feb 23',"FQ2'23",3.693,-2.312,null,-2.303],
+     ['May 23',"FQ3'23",3.752,-1.896,null,-1.761],
+     ['Aug 23',"FQ4'23",4.01,-1.43,null,-1.472],
+     ['Nov 23',"FQ1'24",4.726,-1.234,null,-1.128],
+     ['Feb 24',"FQ2'24",5.824,0.793,null,0.191],
+     ['May 24',"FQ3'24",6.811,0.332,null,0.719],
+     ['Aug 24',"FQ4'24",7.75,0.887,null,1.522],
+     ['Nov 24',"FQ1'25",8.709,1.87,null,2.174],
+     ['Feb 25',"FQ2'25",8.053,1.583,null,1.773],
+     ['May 25',"FQ3'25",9.301,1.885,null,2.169],
+     ['Aug 25',"FQ4'25",11.315,3.201,null,3.654],
+     ['Nov 25',"FQ1'26",13.643,5.24,null,6.136],
+     ['Feb 26',"FQ2'26",23.86,13.785,null,16.135],
+     ['May 26',"FQ3'26",41.456,28.243,null,33.318],
+     ['Aug 26',"FQ4'26",54.229,37.701,null,43.751],
+     ['Nov 26',"FQ1'27 guide",61.5,43.9,'g',50.55]],
+  facts:[['FY26 revenue','$133.2bn (FY25 $37.4bn)'],['FY26 net income','$85.0bn'],['Gross margin FQ4','86.8%'],['Cash / debt','$73.5bn / $5.2bn'],['FY26 capex','$27.4bn'],['FQ1-27 guide','$61.5bn ±1.5, EPS $38.15'],['FY27 EPS consensus','$174.31']],
+  notes:['Data center is now the largest unit: Core DC $18.0bn + Cloud Memory $16.3bn of $54.2bn.','~75% of 2027 output committed; HBM for 2027 largely sold out at "much higher" prices.','FQ2-24 net income ($793m) was above operating profit ($191m) because of a tax benefit. Guided figures: net income = non-GAAP EPS × 1.15bn shares; operating profit from guided gross margin less opex (≈).']},
+ {id:'SKH', name:'SK hynix', tick:'000660 · KRX  ·  SKHY ADR', cur:'₩', unit:'tn',
+  latest:'Q2-26 (Apr–Jun)', yoy:257, qoq:51, om:76.3, nm:118, runNI:null, rpeNote:'4.1× fwd (Benzinga)', fwdPE:4.1,
+  q:[['Q1 23','1Q23',5.09,-2.59,null,-3.4],
+     ['Q2 23','2Q23',7.31,-2.99,null,-2.88],
+     ['Q3 23','3Q23',9.07,-2.18,null,-1.79],
+     ['Q4 23','4Q23',11.31,-1.38,null,0.35],
+     ['Q1 24','1Q24',12.43,1.92,null,2.89],
+     ['Q2 24','2Q24',16.42,4.12,null,5.47],
+     ['Q3 24','3Q24',17.57,5.75,null,7.03],
+     ['Q4 24','4Q24',19.77,8.01,null,8.08],
+     ['Q1 25','1Q25',17.64,8.11,null,7.44],
+     ['Q2 25','2Q25',22.23,7.0,null,9.21],
+     ['Q3 25','3Q25',24.45,12.6,null,11.38],
+     ['Q4 25','4Q25',32.83,15.25,null,19.17],
+     ['Q1 26','1Q26',52.58,40.35,null,37.61],
+     ['Q2 26','2Q26',79.32,93.92,null,60.54]],
+  facts:[['Q2-26 operating profit','₩60.5tn (76% margin)'],['H1-26 operating profit','₩98.2tn'],['2025 revenue / OP','₩97.1tn / ₩47.2tn'],['Net cash','₩69.4tn'],['2026 capex','~₩40tn (upper end)'],['Buyback','₩40tn, ends ~mid-Oct']],
+  notes:['Q2 net profit (₩93.9tn) really was larger than revenue (₩79.3tn). The company booked roughly ₩40tn of one-off gains from selling and revaluing its Kioxia stake (bought for ~₩3.9tn in 2018) below the operating line. Core operating margin was 76%; excluding the gains, net margin would be roughly 60% (estimate).','Q1-26 and 2025 net profit were also lifted above operating profit by Kioxia-related gains.','Q2 revenue and OP missed consensus by ~5%; shares fell 10–18% on the day.','Q3-26 results due late October.']},
+ {id:'SEC', name:'Samsung Electronics', tick:'005930 · KRX', cur:'₩', unit:'tn',
+  latest:'Q3-26 prelim (Jul–Sep)', yoy:127, qoq:14, om:55.1, nm:41.8, runNI:null, fwdPE:null,
+  q:[['Q1 23','1Q23',63.75,1.57,null,0.64],
+     ['Q2 23','2Q23',60.01,1.55,null,0.67],
+     ['Q3 23','3Q23',67.4,5.84,null,2.43],
+     ['Q4 23','4Q23',67.78,6.34,null,2.82],
+     ['Q1 24','1Q24',71.92,6.75,null,6.61],
+     ['Q2 24','2Q24',74.07,9.84,null,10.44],
+     ['Q3 24','3Q24',79.1,10.1,null,9.18],
+     ['Q4 24','4Q24',75.79,7.75,null,6.49],
+     ['Q1 25','1Q25',79.14,8.22,null,6.69],
+     ['Q2 25','2Q25',74.57,5.12,null,4.68],
+     ['Q3 25','3Q25',86.06,12.23,null,12.17],
+     ['Q4 25','4Q25',93.83,19.64,null,20.07],
+     ['Q1 26','1Q26',133.9,47.22,null,57.2],
+     ['Q2 26','2Q26',171.5,71.62,null,89.5],
+     ['Q3 26','3Q26 prelim',195.0,null,'p',107.4]],
+  facts:[['Q3-26 prelim OP','₩107.4tn (55% margin)'],['Q3 revenue vs consensus','₩195tn vs ₩200.6tn'],['Q2-26 chip division (DS)','₩127.5tn rev, ₩89.2tn OP'],['Net cash (Jun)','₩167.6tn'],['Q2 capex','₩14.1tn'],['Buyback','₩15tn, ended ~6–8 Oct']],
+  notes:['Samsung is a conglomerate: memory drives almost all profit; phones and TVs lost money in Q2 on memory cost.','Samsung’s net profit is above operating profit in several 2023–24 quarters because of interest income on its large cash pile and equity-method earnings; this is normal for Samsung.','Q3 net profit not yet disclosed; full results end of October.']},
+ {id:'SNDK', name:'SanDisk', tick:'SNDK · Nasdaq', cur:'$', unit:'bn',
+  latest:'FQ4-26 (Apr–Jun)', yoy:372, qoq:51, om:78.5, nm:77.0, runNI:6.98,
+  q:[['Sep 24',"FQ1'25",1.883,0.211,null,0.291],
+     ['Dec 24',"FQ2'25",1.876,0.104,null,0.195],
+     ['Mar 25',"FQ3'25",1.695,-1.933,null,-1.881],
+     ['Jun 25',"FQ4'25",1.901,-0.023,null,0.018],
+     ['Sep 25',"FQ1'26",2.308,0.112,null,0.176],
+     ['Dec 25',"FQ2'26",3.025,0.803,null,1.065],
+     ['Mar 26',"FQ3'26",5.95,3.615,null,4.111],
+     ['Jun 26',"FQ4'26",8.965,6.903,null,7.037],
+     ['Sep 26',"FQ1'27 guide",10.55,6.98,'g',8.33]],
+  facts:[['FY26 revenue','$20.2bn (FY25 $7.4bn)'],['FY26 net income','$11.4bn'],['Gross margin FQ4','84.6%'],['Cash / debt','$4.8bn / $0'],['FQ4 buyback','$4.5bn (+$14bn authorised)'],['FQ1-27 guide','$10.3–10.8bn, EPS $44–46']],
+  notes:['Spun off from Western Digital in Feb 2025; comparable standalone quarters start FQ1-25. The FQ3-25 loss of $1.9bn is a one-off goodwill impairment charge (operating loss $1.88bn).','Datacenter $3.0bn (+103% QoQ); consumer −32% QoQ.','Two-thirds of FQ4 sequential growth came from price.']},
+ {id:'KIOX', name:'Kioxia', tick:'285A · Tokyo', cur:'¥', unit:'bn',
+  latest:'Q1 FY26 (Apr–Jun)', yoy:415, qoq:76, om:75, nm:47.7, runNI:null,
+  q:[['Dec 24','3Q FY24',449,77,'a',null],
+     ['Mar 25','4Q FY24',347.1,20.3,null,null],
+     ['Jun 25','1Q FY25',342.8,18.3,'a',null],
+     ['Sep 25','2Q FY25',448.3,40.7,null,null],
+     ['Dec 25','3Q FY25',543.6,89.5,null,null],
+     ['Mar 26','4Q FY25',1002.9,405.5,'a',null],
+     ['Jun 26','1Q FY26',1767.1,842.1,null,1325],
+     ['Sep 26','2Q FY26 guide',2390,1280,'g',null]],
+  facts:[['FY25 revenue (to Mar-26)','¥2,337.6bn'],['FY25 operating profit','¥870bn (37%)'],['FY25 net income','¥554.5bn'],['Gross margin 1Q FY26','80%'],['2Q FY26 guide','¥2,390bn rev, ¥1,280bn NI'],['Capex plan','~¥470bn/yr FY26–28'],['LTA target','50% of 2028 volume']],
+  notes:['Listed Dec 2024, so the public quarterly record is short. Prices are split-adjusted.','Kioxia does not publish quarterly operating profit in the sources available here; 1Q FY26 operating profit (≈¥1,325bn) is from the company-stated ~75% margin. Quarters marked ≈ are derived from reported annual totals and growth rates.','1Q FY26 net income missed both consensus and its own guidance.','Market cap is approximate (≈1.6bn shares post-split).']},
+ {id:'STX', name:'Seagate', tick:'STX · Nasdaq', cur:'$', unit:'bn',
+  latest:'FQ4-26 (Apr–Jun)', yoy:48, qoq:17, om:43.0, nm:35.7, runNI:1.69,
+  q:[['Dec 22',"FQ2'23",1.887,-0.033,null,-0.16],
+     ['Mar 23',"FQ3'23",1.86,-0.433,null,-0.315],
+     ['Jun 23',"FQ4'23",1.602,-0.092,null,0.026],
+     ['Sep 23',"FQ1'24",1.454,-0.184,null,-0.129],
+     ['Dec 23',"FQ2'24",1.555,-0.019,null,0.124],
+     ['Mar 24',"FQ3'24",1.655,0.025,null,0.143],
+     ['Jun 24',"FQ4'24",1.887,0.513,null,0.314],
+     ['Sep 24',"FQ1'25",2.168,0.305,null,0.403],
+     ['Dec 24',"FQ2'25",2.325,0.336,null,0.488],
+     ['Mar 25',"FQ3'25",2.16,0.34,null,0.431],
+     ['Jun 25',"FQ4'25",2.444,0.488,null,0.568],
+     ['Sep 25',"FQ1'26",2.629,0.549,null,0.694],
+     ['Dec 25',"FQ2'26",2.825,0.593,null,0.843],
+     ['Mar 26',"FQ3'26",3.112,0.748,null,0.998],
+     ['Jun 26',"FQ4'26",3.629,1.294,null,1.559],
+     ['Sep 26',"FQ1'27 guide",4.1,1.69,'g',null]],
+  facts:[['FY26 revenue','$12.2bn (FY25 $9.1bn)'],['FY26 net income','$3.2bn'],['Gross margin FQ4','52.3%'],['Cash / debt','$1.7bn / $3.6bn'],['FQ1-27 guide','$4.1bn ±0.1, EPS $7.30']],
+  notes:['Hard drives, not chips: growth is steadier (≈+48% YoY) and gross margin ~52%, so the stock trades on a higher multiple.','FQ4-24 net income ($513m) was above operating profit ($314m) on one-off non-operating and tax items.','Fell 10–12% on 2 Oct after Toshiba said it will double HDD output.','Guided net income ≈ non-GAAP EPS × 232m shares.']},
+ {id:'WDC', name:'Western Digital', tick:'WDC · Nasdaq', cur:'$', unit:'bn',
+  latest:'FQ4-26 (Apr–Jun)', yoy:44, qoq:12, om:41.7, nm:36.9, runNI:1.55,
+  q:[['Sep 24',"FQ1'25",2.212,0.153,null,0.334],
+     ['Dec 24',"FQ2'25",2.409,0.466,null,0.56],
+     ['Mar 25',"FQ3'25",2.294,0.772,null,0.76],
+     ['Jun 25',"FQ4'25",2.605,0.252,null,0.68],
+     ['Sep 25',"FQ1'26",2.818,1.182,null,0.792],
+     ['Dec 25',"FQ2'26",3.017,1.842,null,0.908],
+     ['Mar 26',"FQ3'26",3.337,3.205,null,1.19],
+     ['Jun 26',"FQ4'26",3.747,3.195,null,1.563],
+     ['Sep 26',"FQ1'27 guide",4.1,1.55,'g',1.88]],
+  facts:[['FY26 revenue','$12.9bn (HDD only)'],['FQ4 operating profit','$1.56bn (41.7%)'],['FQ4 non-GAAP net income','$1.38bn (36.9%)'],['FQ4 GAAP net income','$3.20bn (incl. SanDisk-stake gains)'],['Gross margin FQ4','54.1%'],['FQ1-27 guide','$4.1bn ±0.1, EPS $4.00']],
+  notes:['Shown from FQ1-25 because only those quarters are restated to hard drives alone; earlier filings mix in the flash business that became SanDisk.','Net income is GAAP continuing operations. From FQ1-26 it is inflated by gains on WD’s retained SanDisk shares (FQ3-26: $3.2bn net vs $1.19bn operating profit). Operating profit is the reliable line.','Largest drawdown among the US-listed names.']}
+];
+const $f=(v)=>'$'+v.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+const KRW=LIVE.fx.KRW, JPY=LIVE.fx.JPY;
+// shares outstanding (bn), approximate, from latest filings; Samsung adds preferred shares at their price ratio
+const SH={MU:1.1314,SNDK:0.1464,WDC:0.3605,STX:0.2266,SKH:0.7127,SEC:5.846*1.087,KIOX:1.617}; // bn shares: SEC filings Aug–Oct 2026; SK hynix/Samsung implied from KRX market caps (Samsung incl. preferred); Kioxia after 1:3 split
+// quarterly average FX used to convert reported KRW / JPY financials
+const FXQ={KRW:{'2023-1':1274.9,'2023-2':1314.8,'2023-3':1312.7,'2023-4':1318.7,'2024-1':1328.2,'2024-2':1370.1,'2024-3':1354.4,'2024-4':1395.5,'2025-1':1449.5,'2025-2':1397.1,'2025-3':1385.8,'2025-4':1447.7,'2026-1':1462.9,'2026-2':1500.9,'2026-3':1417.0},
+ JPY:{'2024-4':152.4,'2025-1':152.5,'2025-2':144.5,'2025-3':147.5,'2025-4':154.1,'2026-1':156.9,'2026-2':159.4,'2026-3':159.3}};
+const MON={Mar:1,Jun:2,Sep:3,Dec:4};
+for(const c of CO){const L=LIVE.co[c.id];
+  Object.assign(c,{px:L.px,hi:L.hi,hiD:L.hiD,sep1:L.sep1,prev:L.prev,ext:L.ext,pxLocal:L.pxLocal,localCur:L.localCur,hiLocal:L.hiLocal,low1y:L.low1y,mcapUSD:Math.round(L.px*SH[c.id])});
+  if(c.cur!=='$'){const k=c.cur==='₩'?'KRW':'JPY'; c.native={cur:c.cur,unit:c.unit};
+    c.q=c.q.map(d=>{let key; const [a,yy]=d[0].split(' '); key='20'+yy+'-'+(k==='KRW'?a[1]:MON[a]);
+      const f=FXQ[k][key]; const conv=v=>v==null?null:(k==='KRW'?v*1000/f:v/f);
+      const nd=[d[0],d[1],conv(d[2]),conv(d[3]),d[4],conv(d[5])]; nd.nat=[d[2],d[3],d[5]]; nd.fx=f; return nd});
+    c.cur='$';c.unit='bn'}}
+const oneOff=d=>d[3]!=null&&d[5]!=null&&d[3]>d[5]&&d[3]>0;
+const fmtTime=(t,tz)=>new Date(t*1000).toLocaleString('en-GB',{timeZone:tz,day:'numeric',month:'short',hour:'2-digit',minute:'2-digit',hour12:false});
+
+const pct=(a,b)=>(a/b-1)*100;
+// run-rate P/E inputs (USD bn annual net income at current FX)
+const RUN={MU:43.9*4, SNDK:6.98*4, STX:1.69*4, WDC:1.55*4,
+  SKH:(60.54*0.78)*4*1000/KRW,   // Q2 OP after ~22% tax; excludes Kioxia one-off
+  SEC:(107.4*0.78)*4*1000/KRW,   // Q3 prelim OP after tax
+  KIOX:1280*4/JPY};
+const RUNNOTE={SKH:'Q2 OP after tax, ex-Kioxia gain',SEC:'Q3 prelim OP after tax',KIOX:'2Q FY26 guided NI',MU:'FQ1-27 guided NI',SNDK:'FQ1-27 guided NI',STX:'FQ1-27 guided NI',WDC:'FQ1-27 guided NI'};
+
+function spark(id,w=110,h=28){
+  const r=LIVE.co[id].series.map(x=>x[1]); const mn=Math.min(...r), mx=Math.max(...r);
+  const pts=r.map((v,i)=>[i/(r.length-1)*(w-4)+2, h-3-(v-mn)/(mx-mn)*(h-6)]);
+  const d=pts.map((p,i)=>(i?'L':'M')+p[0].toFixed(1)+' '+p[1].toFixed(1)).join('');
+  const L=pts[pts.length-1];
+  return `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" aria-hidden="true"><path d="${d}" fill="none" stroke="var(--accent)" stroke-width="1.5"/><circle cx="${L[0]}" cy="${L[1]}" r="2.5" fill="var(--down)"/></svg>`;
+}
+function scoreboard(){
+  const t=document.getElementById('score');
+  let h='<thead><tr><th>Company</th><th class="k">Price (USD)</th><th>Day</th><th>After-hours</th><th>1-yr trend</th><th>All-time high</th><th class="k">From ATH</th><th>Since 1 Sep</th><th>Mkt cap</th><th>Latest qtr</th><th>Rev YoY</th><th>Op margin</th><th>Net margin</th><th>Run-rate P/E</th></tr></thead><tbody>';
+  for(const c of CO){
+    const dd=pct(c.px,c.hi), s1=pct(c.px,c.sep1), day=pct(c.px,c.prev), pe=c.mcapUSD/RUN[c.id];
+    const loc=c.localCur==='USD'?'':`<small>${c.localCur==='KRW'?'₩':'¥'}${c.pxLocal.toLocaleString('en-US')} local</small>`;
+    const ext=window.__live?`<small>live · Hyperliquid</small>`:(c.ext?`${$f(c.ext[0])}<small class="${c.ext[0]<c.px?'neg':'pos'}">${pct(c.ext[0],c.px).toFixed(1)}%</small>`:'<small>market open</small>');
+    const hd=new Date(c.hiD+'T00:00:00Z').toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric',timeZone:'UTC'});
+    h+=`<tr data-id="${c.id}" style="cursor:pointer" title="Open price chart"><td class="co">${c.name}<small>${c.tick}</small></td><td class="co k" style="text-align:right">${$f(c.px)}${loc}</td>
+    <td class="${day<0?'neg':'pos'}">${day>0?'+':''}${day.toFixed(1)}%</td><td class="co" style="text-align:right;font-weight:500">${ext}</td><td>${spark(c.id)}</td>
+    <td class="co" style="text-align:right;font-weight:500">${$f(c.hi)}<small>${hd}</small></td>
+    <td class="k"><span class="dd"><span class="ddbar" style="width:${Math.abs(dd)*0.8}px"></span><b class="neg">${dd.toFixed(1)}%</b></span></td>
+    <td class="${s1<0?'neg':'pos'}">${s1.toFixed(1)}%</td><td>$${c.mcapUSD>=1000?(c.mcapUSD/1000).toFixed(2)+'tn':c.mcapUSD+'bn'}</td>
+    <td style="font-size:12px;color:var(--ink2)">${c.latest}</td><td class="pos">+${c.yoy}%</td><td><b>${c.om}%</b>${c.id==='KIOX'?'<small>≈ co. stated</small>':''}</td><td>${c.nm}%${c.id==='SKH'?'<small class="neg">one-off gains*</small>':''}${c.id==='WDC'?'<small>non-GAAP†</small>':''}${c.id==='SEC'?'<small>Q2 (Q3 n/a)</small>':''}</td>
+    <td title="${RUNNOTE[c.id]}">${pe.toFixed(1)}×</td></tr>`;
+  }
+  t.innerHTML=h+'</tbody>';
+  const us=LIVE.co.MU, as=LIVE.co.SKH;
+  document.getElementById('stampMain').textContent='Data pulled '+fmtTime(LIVE.generated,'Asia/Kolkata')+' IST';
+  document.getElementById('stampUS').textContent='US: close '+fmtTime(us.time,'America/New_York')+' ET'+(us.ext?' · after-hours to '+fmtTime(us.ext[1],'America/New_York')+' ET':'');
+  document.getElementById('stampAsia').textContent='Korea/Japan: live, '+fmtTime(as.time,'Asia/Kolkata')+' IST (~15-20 min delay)';
+  document.getElementById('stampFX').textContent='USD/KRW '+KRW.toLocaleString('en-US')+' · USD/JPY '+JPY;
+}
+scoreboard();
+// ---------- live tiles + ticker ----------
+const RM=matchMedia('(prefers-reduced-motion: reduce)').matches;
+const SYM={MU:'MU',SKH:'000660',SEC:'005930',SNDK:'SNDK',KIOX:'285A',STX:'STX',WDC:'WDC'};
+// Hyperliquid perp markets that track each stock (USD per share)
+const HL={MU:'xyz:MU',SKH:'xyz:SKHX',SEC:'xyz:SMSN',SNDK:'xyz:SNDK',KIOX:'xyz:KIOXIA',WDC:'xyz:WDC',STX:'para:STX'};
+const FEED={mode:'snapshot',t:LIVE.generated*1000,err:null};
+for(const c of CO){c.snapPx=c.px;c.snapPrev=c.prev;}
+function stampFeed(){
+  const live=FEED.mode==='live', ageMin=Math.round((Date.now()-FEED.t)/60000);
+  const ageStr=live?'updated '+new Date(FEED.t).toLocaleTimeString('en-GB',{timeZone:'Asia/Kolkata',hour12:false})+' IST · refreshes every 10 s':
+    'Updated '+fmtTime(FEED.t/1000,'Asia/Kolkata')+' IST · '+(ageMin<1?'just now':ageMin<60?ageMin+' min ago':ageMin<1440?Math.round(ageMin/60)+' h ago':Math.round(ageMin/1440)+' days ago');
+  const stale=!live&&ageMin>90;
+  document.getElementById('ageTxt').textContent=(live?'LIVE · Hyperliquid · ':'Snapshot · ')+ageStr;
+  document.querySelectorAll('#age .dot,#tkDot').forEach(d=>d.classList.toggle('stale',stale));
+  document.getElementById('tkLabel').textContent=live?'Live · Hyperliquid · USD':((stale?'Snapshot':'Latest')+' · USD · '+fmtTime(FEED.t/1000,'Asia/Kolkata')+' IST');
+  if(live){document.getElementById('stampMain').textContent='Live · Hyperliquid · every 10 s';}
+  const fn=document.getElementById('feedNote'); if(fn)fn.innerHTML=live?
+    'Live prices are Hyperliquid perpetual-futures marks (trade.xyz markets; Seagate from the thinner para market) that track each stock and trade 24/7, so outside exchange hours they can drift from the last official close. "24h" change compares with the price 24 hours ago.':
+    'This page is showing the snapshot built into it. Hosted artifact pages cannot reach outside price feeds; open the downloaded copy of this file in your browser to get live Hyperliquid prices every 10 seconds.';
+}
+function renderLive(animate,changed){
+  const T=document.getElementById('tiles'), live=FEED.mode==='live', chgLab=live?'24h':'today';
+  T.innerHTML=CO.map(c=>{const day=pct(c.px,c.prev),dd=pct(c.px,c.hi),up=day>=0;
+    const ext=live?`<span>${HL[c.id]} · snapshot ${$f(c.snapPx)}</span>`:(c.ext?`<span>AH ${$f(c.ext[0])} <span class="${c.ext[0]<c.px?'neg':'pos'}">${pct(c.ext[0],c.px).toFixed(1)}%</span></span>`:`<span>${c.localCur==='KRW'?'₩':'¥'}${c.pxLocal.toLocaleString('en-US')} · market open</span>`);
+    const hd=new Date(c.hiD+'T00:00:00Z').toLocaleDateString('en-GB',{day:'numeric',month:'short',timeZone:'UTC'});
+    const fl=changed&&changed[c.id]?(changed[c.id]>0?'flash-up':'flash-dn'):(up?'flash-up':'flash-dn');
+    return `<button class="tile ${fl}" data-id="${c.id}" aria-label="${c.name} ${$f(c.px)}, ${day.toFixed(1)}% ${chgLab}, ${dd.toFixed(1)}% from all-time high">
+      <div class="t-top"><span class="t-name">${c.name}</span><span class="t-sym">${SYM[c.id]}</span></div>
+      <div class="t-px" data-to="${c.px}" data-from="${c.prev}">${$f(c.px)}</div>
+      <div class="t-row"><span class="pill ${up?'up':'dn'}">${up?'▲ +':'▼ '}${day.toFixed(2)}%</span><span class="t-sub">${up?'+':'−'}${$f(Math.abs(c.px-c.prev))} ${chgLab}</span></div>
+      <div class="t-sub">${ext}</div>
+      <div class="meter"><i style="--w:${animate&&!RM?100:(c.px/c.hi*100).toFixed(1)}%" data-w="${(c.px/c.hi*100).toFixed(1)}"></i></div>
+      <div class="t-ath"><span>ATH ${$f(c.hi)} · ${hd}</span><b>${dd.toFixed(1)}%</b></div>
+    </button>`}).join('')+(typeof WL!=='undefined'?WL.filter(w=>w.grp==='mem').map(w=>{const ch=pct(w.px,w.prev),up=ch>=0;return `<button type="button" class="tile w ${up?'flash-up':'flash-dn'}" data-w="${w.id}" aria-label="${w.name} price chart"><div class="t-top"><span class="t-name">${w.name}</span><span class="t-sym">Shanghai</span></div><div class="t-px">${fmtP(w.px)}</div><div class="t-row"><span class="pill ${up?'up':'dn'}">${up?'▲ +':'▼ '}${ch.toFixed(2)}%</span><span class="t-sub">${up?'+':'−'}${fmtP(Math.abs(w.px-w.prev))} 24h</span></div><div class="t-sub">${w.hl} · listed Jul 2026</div><div class="t-ath"><span>China’s DRAM maker</span><span>24h vol ${fmtVol(w.vol)}</span></div></button>`}).join(''):'')+(()=>{const dds=CO.map(c=>pct(c.px,c.hi)),days=CO.map(c=>pct(c.px,c.prev));const avg=a=>a.reduce((x,y)=>x+y,0)/a.length;const w=CO[dds.indexOf(Math.min(...dds))],b=CO[dds.indexOf(Math.max(...dds))];const mc=CO.reduce((x,c)=>x+c.mcapUSD,0);
+    return `<div class="tile" style="cursor:default;background:var(--tk-bg);color:var(--tk-fg);border-color:var(--tk-bg)"><div class="t-top"><span class="t-name">Group of 7 (ex-CXMT)</span><span class="t-sym" style="color:var(--tk-mut)">avg</span></div><div class="t-px">${avg(dds).toFixed(1)}%</div><div class="t-sub" style="color:var(--tk-mut)">average distance from all-time high</div><div class="t-row"><span class="pill ${avg(days)>=0?'up':'dn'}">${avg(days)>=0?'▲ +':'▼ '}${avg(days).toFixed(2)}% ${chgLab}</span></div><div class="t-sub" style="color:var(--tk-mut)">Deepest: ${w.name} ${pct(w.px,w.hi).toFixed(0)}% · Shallowest: ${b.name} ${pct(b.px,b.hi).toFixed(0)}%<br>Combined value ≈ $${(mc/1000).toFixed(2)}tn</div></div>`})();
+  T.querySelectorAll('.tile[data-id]').forEach(b=>b.addEventListener('click',()=>{const t=document.getElementById('tab-'+b.dataset.id);if(t){t.click();document.getElementById('tabs').scrollIntoView({behavior:RM?'auto':'smooth',block:'start'})}}));
+  const item=c=>{const day=pct(c.px,c.prev),dd=pct(c.px,c.hi);return `<span class="tk-item"><b>${c.name}</b><span class="tk-px">${$f(c.px)}</span><span class="${day>=0?'tk-up':'tk-dn'}">${day>=0?'▲ +':'▼ '}${day.toFixed(2)}%</span><span class="tk-mut">ATH ${dd.toFixed(0)}%</span></span>`};
+  const witem=w=>{const ch=pct(w.px,w.prev);return `<span class="tk-item"><b>${w.name.replace(' (HYPE)','')}</b><span class="tk-px">${fmtU(w.unit,w.px)}</span><span class="${ch>=0?'tk-up':'tk-dn'}">${ch>=0?'▲ +':'▼ '}${ch.toFixed(2)}%</span></span>`};
+  const one=(typeof WL!=='undefined'?WL.filter(w=>w.grp==='index').map(witem).join(''):'')+CO.map(item).join('')+(typeof WL!=='undefined'?WL.filter(w=>w.grp==='watch').map(witem).join(''):''); const tr=document.getElementById('tkTrack'); tr.innerHTML=RM?one:one+one;
+  stampFeed();
+  if(RM)return;
+  T.querySelectorAll('.tile[data-id]').forEach((el,i)=>{
+    if(changed&&!changed[el.dataset.id])return;
+    if(animate){const px=el.querySelector('.t-px'), to=+px.dataset.to, from=+px.dataset.from, t0=performance.now()+i*90, D=1100;
+      px.textContent=$f(from);
+      const step=t=>{const k=Math.min(1,Math.max(0,(t-t0)/D)), e=1-Math.pow(1-k,3); px.textContent=$f(from+(to-from)*e); if(k<1)requestAnimationFrame(step); else el.classList.add('go')};
+      requestAnimationFrame(step);
+      const m=el.querySelector('.meter i'); setTimeout(()=>m.style.setProperty('--w',m.dataset.w+'%'),250+i*90);}
+    else requestAnimationFrame(()=>el.classList.add('go'));
+  });
+}
+// ---------- watchlist, indices and ETFs (Hyperliquid only) ----------
+const WLD={"t": 1792695718, "items": [{"id": "HYPE", "name": "Hyperliquid (HYPE)", "hl": "HYPE", "kind": "Crypto", "grp": "watch", "unit": "usd", "px": 77.6215, "prev": 81.442, "vol": 519652556.20508015}, {"id": "BTC", "name": "Bitcoin", "hl": "BTC", "kind": "Crypto", "grp": "watch", "unit": "usd", "px": 81362.5, "prev": 84380.0, "vol": 3646401963.4839497}, {"id": "NVDA", "name": "Nvidia", "hl": "xyz:NVDA", "kind": "AI chips", "grp": "ai", "unit": "usd", "px": 211.455, "prev": 220.74, "vol": 83009046.16644946}, {"id": "AMD", "name": "AMD", "hl": "xyz:AMD", "kind": "AI chips", "grp": "ai", "unit": "usd", "px": 507.145, "prev": 553.65, "vol": 31276001.13152}, {"id": "GOOGL", "name": "Alphabet (Google)", "hl": "xyz:GOOGL", "kind": "AI platform", "grp": "ai", "unit": "usd", "px": 323.075, "prev": 333.68, "vol": 49791425.90622002}, {"id": "AMZN", "name": "Amazon", "hl": "xyz:AMZN", "kind": "AI cloud", "grp": "ai", "unit": "usd", "px": 248.845, "prev": 262.26, "vol": 16218409.23152}, {"id": "META", "name": "Meta", "hl": "xyz:META", "kind": "AI platform", "grp": "ai", "unit": "usd", "px": 641.03, "prev": 706.89, "vol": 326749190.2286502}, {"id": "CBRS", "name": "Cerebras", "hl": "xyz:CBRS", "kind": "AI chips", "grp": "ai", "unit": "usd", "px": 109.21, "prev": 115.54, "vol": 16037465.470699996}, {"id": "AAOI", "name": "Applied Optoelectronics", "hl": "xyz:AAOI", "kind": "AI optics", "grp": "ai", "unit": "usd", "px": 67.2815, "prev": 76.899, "vol": 3745931.11732}, {"id": "SPCX", "name": "SpaceX", "hl": "xyz:SPCX", "kind": "Space / AI", "grp": "ai", "unit": "usd", "px": 145.155, "prev": 158.45, "vol": 228562751.3342001}, {"id": "OAI", "name": "OpenAI", "hl": "io:OAI", "kind": "Pre-IPO \u00b7 implied value", "grp": "ai", "unit": "val", "px": 1506.2, "prev": 1533.9, "vol": 1764131.3595999996}, {"id": "ANTH", "name": "Anthropic", "hl": "io:ANTH", "kind": "Pre-IPO \u00b7 implied value", "grp": "ai", "unit": "val", "px": 1919.8, "prev": 1960.3, "vol": 9031488.466800004}, {"id": "CXMT", "name": "CXMT (ChangXin Memory)", "hl": "xyz:CXMT", "kind": "China DRAM", "grp": "mem", "unit": "usd", "px": 5.80235, "prev": 6.1681, "vol": 17507756.734599996}, {"id": "GOLD", "name": "Gold", "hl": "xyz:GOLD", "kind": "Commodity", "grp": "watch", "unit": "usd", "px": 4030.05, "prev": 4115.9, "vol": 101518808.7009799}, {"id": "SILVER", "name": "Silver", "hl": "xyz:SILVER", "kind": "Commodity", "grp": "watch", "unit": "usd", "px": 54.592, "prev": 57.197, "vol": 149542793.25227988}, {"id": "BRENT", "name": "Crude oil (Brent)", "hl": "xyz:BRENTOIL", "kind": "Commodity", "grp": "watch", "unit": "usd", "px": 108.805, "prev": 106.2, "vol": 159260857.10000002}, {"id": "WTI", "name": "WTI oil", "hl": "xyz:CL", "kind": "Commodity", "grp": "watch", "unit": "usd", "px": 99.452, "prev": 98.205, "vol": 205907542.72135106}, {"id": "SP500", "name": "S&P 500", "hl": "xyz:SP500", "kind": "US index", "grp": "index", "unit": "pts", "px": 7636.75, "prev": 7744.0, "vol": 326199148.4871}, {"id": "NDX", "name": "Nasdaq 100", "hl": "xyz:XYZ100", "kind": "US index", "grp": "index", "unit": "pts", "px": 28892.5, "prev": 29791.0, "vol": 330282598.5089999}, {"id": "JP225", "name": "Nikkei 225", "hl": "xyz:JP225", "kind": "Japan index", "grp": "index", "unit": "pts", "px": 62441.0, "prev": 64687.0, "vol": 5836314.158120001}, {"id": "KR200", "name": "KOSPI 200", "hl": "xyz:KR200", "kind": "Korea index", "grp": "index", "unit": "pts", "px": 841.53, "prev": 883.68, "vol": 1132764.185691}, {"id": "DRAM", "name": "Roundhill Memory ETF", "hl": "xyz:DRAM", "kind": "DRAM", "grp": "etf", "unit": "usd", "px": 45.5885, "prev": 48.88, "vol": 126222056.65920009}, {"id": "SMH", "name": "VanEck Semiconductor ETF", "hl": "xyz:SMH", "kind": "SMH", "grp": "etf", "unit": "usd", "px": 523.145, "prev": 555.0, "vol": 1324198.1537999997}, {"id": "SOXL", "name": "Semiconductor Bull 3x ETF", "hl": "xyz:SOXL", "kind": "SOXL", "grp": "etf", "unit": "usd", "px": 82.1345, "prev": 102.54, "vol": 184608040.22493973}, {"id": "EWY", "name": "iShares MSCI South Korea", "hl": "xyz:EWY", "kind": "EWY", "grp": "etf", "unit": "usd", "px": 148.98, "prev": 155.81, "vol": 29929108.66155998}, {"id": "KORU", "name": "South Korea Bull 3x ETF", "hl": "xyz:KORU", "kind": "KORU", "grp": "etf", "unit": "usd", "px": 10.1385, "prev": 11.713, "vol": 35608142.55600002}]}; const WL=WLD.items;
+const fmtP=v=>'$'+v.toLocaleString('en-US',{minimumFractionDigits:v>=1000?0:2,maximumFractionDigits:v>=1000?0:(v<10?3:2)});
+const fmtU=(u,v)=>u==='val'?(v>=1000?'$'+(v/1000).toFixed(3)+'tn':'$'+v.toFixed(0)+'bn'):u==='pts'?v.toLocaleString('en-US',{minimumFractionDigits:v>=1000?0:2,maximumFractionDigits:v>=1000?0:2}):fmtP(v);
+const fmtVol=v=>v>=1e9?'$'+(v/1e9).toFixed(2)+'bn':'$'+(v/1e6).toFixed(1)+'m';
+const GRIDS={watch:'wtiles',index:'itiles',etf:'etiles',ai:'atiles'};
+function renderWatch(changed){
+  const live=FEED.mode==='live';
+  for(const [g,gid] of Object.entries(GRIDS)){
+    const W=document.getElementById(gid); if(!W)continue;
+    W.innerHTML=WL.filter(w=>w.grp===g).map(w=>{const ch=pct(w.px,w.prev),up=ch>=0, fl=changed&&changed[w.id]?(changed[w.id]>0?'flash-up':'flash-dn'):(up?'flash-up':'flash-dn');
+      return `<button type="button" class="tile w ${fl}" data-w="${w.id}" aria-label="${w.name} price chart">
+        <div class="t-top"><span class="t-name">${w.name}</span><span class="t-sym">${w.kind}</span></div>
+        <div class="t-px">${fmtU(w.unit,w.px)}${w.unit==='pts'?'<span class="t-sym" style="font-size:12px"> pts</span>':w.unit==='val'?'<span class="t-sym" style="font-size:12px"> implied</span>':''}</div>
+        <div class="t-row"><span class="pill ${up?'up':'dn'}">${up?'▲ +':'▼ '}${ch.toFixed(2)}%</span><span class="t-sub">${up?'+':'−'}${fmtU(w.unit,Math.abs(w.px-w.prev))} 24h</span></div>
+        <div class="t-ath"><span>${w.hl}</span><span>24h vol ${fmtVol(w.vol)}</span></div>
+      </button>`}).join('');
+    if(!RM)requestAnimationFrame(()=>W.querySelectorAll('.tile').forEach(el=>{if(!changed||changed[el.dataset.w])el.classList.add('go')}));
+  }
+  const lab=live?'LIVE · Hyperliquid · '+new Date(FEED.t).toLocaleTimeString('en-GB',{timeZone:'Asia/Kolkata',hour12:false})+' IST':'Snapshot · '+fmtTime(WLD.t,'Asia/Kolkata')+' IST';
+  document.querySelectorAll('.wAge').forEach(e=>e.textContent=lab);
+  renderCaps();
+}
+// ---------- market cap league table (memory + AI names) ----------
+const CAPX=[{id:'NVDA',sh:24.1,grp:'AI'},{id:'GOOGL',sh:12.23,grp:'AI'},{id:'AMZN',sh:10.786,grp:'AI'},{id:'META',sh:2.55,grp:'AI'},{id:'AMD',sh:1.6325,grp:'AI'},{id:'CBRS',sh:0.23756,grp:'AI'},{id:'AAOI',sh:0.084569,grp:'AI'},{id:'SPCX',sh:13.58,grp:'AI / space'},{id:'OAI',sh:1,grp:'AI · private',imp:1},{id:'ANTH',sh:1,grp:'AI · private',imp:1},{id:'CXMT',sh:65.3,grp:'Memory'}];
+function capRows(){
+  const r=CO.map(c=>({id:c.id,name:c.name,grp:'Memory',px:c.px,prev:c.prev,sh:SH[c.id]}));
+  for(const x of CAPX){const w=WL.find(y=>y.id===x.id); if(w)r.push({id:x.id,name:w.name,grp:x.grp,px:w.px,prev:w.prev,sh:x.sh,unit:w.unit,imp:x.imp});}
+  r.forEach(x=>{x.cap=x.px*x.sh; x.chg=(x.px-x.prev)*x.sh}); return r.sort((a,b)=>b.cap-a.cap);
+}
+// latest reported quarterly revenue (USD bn; KRW/JPY converted at that quarter's average rate)
+const REV={MU:{q:'Jun–Aug 2026 (FQ4-26)',r:54.229,y:379,nx:'mid-Dec'},SKH:{q:'Apr–Jun 2026 (Q2)',r:52.85,y:257,nx:'28 Oct',nat:'₩79.3tn'},
+ SEC:{q:'Jul–Sep 2026 (Q3, prelim)',r:137.6,y:127,nx:'30 Oct (full)',nat:'₩195tn',p:1},SNDK:{q:'Apr–Jun 2026 (FQ4-26)',r:8.965,y:372,nx:'late Oct'},
+ KIOX:{q:'Apr–Jun 2026 (1Q FY26)',r:11.09,y:415,nx:'Nov',nat:'¥1,767bn'},STX:{q:'Apr–Jun 2026 (FQ4-26)',r:3.629,y:48,nx:'27 Oct'},
+ WDC:{q:'Apr–Jun 2026 (FQ4-26)',r:3.747,y:44,nx:'22 Oct'},NVDA:{q:'May–Jul 2026 (FQ2-27)',r:96.221,y:106,nx:'Nov'},
+ SPCX:{q:'Apr–Jun 2026 (Q2)',r:7.814,y:92,nx:'—'},AAOI:{q:'Apr–Jun 2026 (Q2)',r:0.192,y:86,nx:'Nov'},
+ META:{q:'Jul–Sep 2026 (Q3)',r:64.601,y:26,nx:'reported 22 Oct'},GOOGL:{q:'Apr–Jun 2026 (Q2)',r:119.796,y:24,nx:'late Oct'},AMZN:{q:'Apr–Jun 2026 (Q2)',r:200.606,y:20,nx:'late Oct'},
+ AMD:{q:'Apr–Jun 2026 (Q2)',r:11.536,y:50,nx:'early Nov'},CBRS:{q:'Apr–Jun 2026 (Q2)',r:0.180,y:75,nx:'Nov'},
+ CXMT:{q:'Jan–Jun 2026 (half-year)',r:21.86,y:874,nx:'—',nat:'CN¥150bn',m:2},OAI:{priv:1},ANTH:{priv:1}};
+const fmtRev=v=>v>=1?'$'+v.toFixed(v>=10?1:2)+'bn':'$'+(v*1000).toFixed(0)+'m';
+const fmtCap=v=>v>=1000?'$'+(v/1000).toFixed(2)+'tn':'$'+v.toFixed(v>=100?0:1)+'bn';
+function renderCaps(){
+  const T=document.getElementById('capTbl'); if(!T)return;
+  const rows=capRows(), max=rows[0].cap, tot=rows.reduce((a,x)=>a+x.cap,0), live=FEED.mode==='live';
+  const sum=g=>rows.filter(x=>g==='Memory'?x.grp==='Memory':x.grp!=='Memory').reduce((a,x)=>a+x.cap,0);
+  const sumc=g=>rows.filter(x=>g==='Memory'?x.grp==='Memory':x.grp!=='Memory').reduce((a,x)=>a+x.chg,0);
+  document.getElementById('capSum').innerHTML=[['All '+rows.length,tot,rows.reduce((a,x)=>a+x.chg,0)],['Memory '+rows.filter(x=>x.grp==='Memory').length,sum('Memory'),sumc('Memory')],['AI '+rows.filter(x=>x.grp!=='Memory').length,sum('AI'),sumc('AI')]].map(([l,v,c])=>
+    `<div class="cap-k"><span>${l}</span><b>${fmtCap(v)}</b><small class="${c>=0?'pos':'neg'}">${c>=0?'+':'−'}${fmtCap(Math.abs(c))} ${live?'24h':'today'}</small></div>`).join('');
+  T.innerHTML=`<thead><tr><th>#</th><th>Company</th><th>Group</th><th>Market cap (USD)</th><th class="capbar-h">Size</th><th>Share of total</th><th>Price</th><th>Value change ${live?'24h':'today'}</th><th>Last quarter revenue</th><th>Rev YoY</th><th>Price / sales</th><th>Next report</th><th>Shares</th></tr></thead><tbody>`+
+    rows.map((x,i)=>`<tr data-cap="${x.id}" style="cursor:pointer" title="Open price chart"><td>${i+1}</td><td class="co">${x.name}</td><td><span class="gtag ${x.grp==='Memory'?'g-m':'g-a'}">${x.grp}</span></td>
+      <td><b>${fmtCap(x.cap)}</b></td><td class="capbar-c"><span class="capbar ${x.grp==='Memory'?'g-m':'g-a'}" style="width:${(x.cap/max*100).toFixed(1)}%"></span></td>
+      <td>${(x.cap/tot*100).toFixed(1)}%</td><td>${x.imp?fmtU('val',x.px)+'<small style="display:block;color:var(--muted);font-size:11px">implied value</small>':fmtP(x.px)}</td><td class="${x.chg>=0?'pos':'neg'}">${x.chg>=0?'+':'−'}${fmtCap(Math.abs(x.chg))} (${pct(x.px,x.prev).toFixed(1)}%)</td>${(()=>{const v=REV[x.id];if(v&&v.priv)return '<td style="color:var(--muted);font-size:12px">private · not public</td><td></td><td></td><td></td>';return v?`<td><b>${fmtRev(v.r)}</b><small style="display:block;color:var(--muted);font-size:11px">${v.q}${v.nat?' · '+v.nat:''}</small></td><td class="pos">+${v.y}%</td><td>${(x.cap/(v.r*(v.m||4))).toFixed(1)}×</td><td style="font-size:12px;color:var(--ink2)">${v.nx}</td>`:'<td></td><td></td><td></td><td></td>'})()}<td>${x.imp?'—':x.sh>=1?x.sh.toFixed(2)+'bn':(x.sh*1000).toFixed(0)+'m'}</td></tr>`).join('')+'</tbody>';
+}
+renderLive(true);
+renderWatch();
+// ---------- live Hyperliquid feed (works when this file is opened directly in a browser) ----------
+async function pullHL(){
+  const post=dex=>fetch('https://api.hyperliquid.xyz/info',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(dex?{type:'metaAndAssetCtxs',dex}:{type:'metaAndAssetCtxs'})}).then(r=>{if(!r.ok)throw new Error('HTTP '+r.status);return r.json()});
+  const [x,p,mn,io]=await Promise.all([post('xyz'),post('para'),post(''),post('io')]);
+  const map={}; for(const d of [x,p,mn,io]) d[0].universe.forEach((a,i)=>{map[a.name]=d[1][i]});
+  const changed={}; let any=false;
+  for(const c of CO){const m=map[HL[c.id]]; if(!m)continue; const px=+(m.midPx||m.markPx), prev=+m.prevDayPx; if(!(px>0))continue;
+    const d=c.px?px-c.px:0; if(FEED.mode==='live'&&Math.abs(d)>1e-9)changed[c.id]=d; c.px=px; if(prev>0)c.prev=prev; c.mcapUSD=Math.round(px*SH[c.id]); any=true;}
+  const wch={}; for(const w of WL){const m=map[w.hl]; if(!m)continue; const px=+(m.midPx||m.markPx); if(!(px>0))continue; if(FEED.mode==='live'&&Math.abs(px-w.px)>1e-12)wch[w.id]=px-w.px; w.px=px; w.prev=+m.prevDayPx||w.prev; w.vol=+m.dayNtlVlm||w.vol; any=true;}
+  if(!any)throw new Error('no markets');
+  const first=FEED.mode!=='live'; FEED.mode='live'; FEED.t=Date.now(); window.__live=true;
+  scoreboard(); renderLive(first, first?null:changed); renderWatch(first?null:wch); if(CM.open)cmHead(); if(typeof scen==='function')scen();
+}
+(async function loop(){
+  try{await pullHL(); setTimeout(loop,10000)}
+  catch(e){FEED.err=e; if(FEED.mode==='live'){stampFeed(); setTimeout(loop,30000)} else stampFeed();}
+})();
+setInterval(()=>{stampFeed();if(FEED.mode!=='live')renderWatch()},30000);
+// ---------- price chart modal (Hyperliquid candles) ----------
+const TF=[{k:'1D',iv:'5m',days:1},{k:'1W',iv:'30m',days:7},{k:'1M',iv:'4h',days:30},{k:'3M',iv:'1d',days:90},{k:'6M',iv:'1d',days:182},{k:'1Y',iv:'1d',days:365},{k:'All',iv:'1d',days:1500}];
+const CM={open:false,id:null,coin:null,name:'',tf:'1M',type:'candle',chart:null,series:null,vol:null,timer:null,data:[]};
+const tok=n=>getComputedStyle(document.documentElement).getPropertyValue(n).trim()||'#888';
+function cmItem(id){const c=CO.find(x=>x.id===id); if(c)return {id,name:c.name,coin:HL[c.id],px:c.px,prev:c.prev,co:true,sub:SYM[c.id]+' · '+HL[c.id]};
+  const w=WL.find(x=>x.id===id); return w?{id,name:w.name,coin:w.hl,px:w.px,prev:w.prev,co:false,unit:w.unit,sub:w.kind+' · '+w.hl}:null}
+function openChart(id){
+  const it=cmItem(id); if(!it)return; Object.assign(CM,{open:true,id,coin:it.coin,name:it.name,unit:it.unit||'usd'});
+  document.getElementById('cmName').textContent=it.name; document.getElementById('cmSub').textContent=it.sub;
+  document.getElementById('cmFin').hidden=!it.co;
+  document.getElementById('cm').hidden=false; document.body.style.overflow='hidden';
+  cmHead(); loadCandles(); clearInterval(CM.timer); CM.timer=setInterval(()=>{if(CM.open)loadCandles(true)},15000);
+  setTimeout(()=>document.getElementById('cmClose').focus(),0);
+}
+function closeChart(){CM.open=false;clearInterval(CM.timer);document.getElementById('cm').hidden=true;document.body.style.overflow='';if(CM.chart){CM.chart.remove();CM.chart=null}}
+function cmHead(){const it=cmItem(CM.id); if(!it)return; const ch=pct(it.px,it.prev);
+  document.getElementById('cmPx').innerHTML=`<b>${fmtU(CM.unit,it.px)}</b><span class="pill ${ch>=0?'up':'dn'}">${ch>=0?'▲ +':'▼ '}${ch.toFixed(2)}% ${FEED.mode==='live'?'24h':'today'}</span><span class="chart-hint">${FEED.mode==='live'?'live':'snapshot'}</span>`;}
+async function loadCandles(quiet){
+  const tf=TF.find(t=>t.k===CM.tf), end=Date.now(), start=end-tf.days*86400000, msg=document.getElementById('cmMsg');
+  if(!quiet){msg.hidden=false;msg.textContent='Loading '+CM.tf+' chart…';}
+  let d;
+  const getC=async()=>{const r=await fetch('https://api.hyperliquid.xyz/info',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({type:'candleSnapshot',req:{coin:CM.coin,interval:tf.iv,startTime:start,endTime:end}})}); if(!r.ok)throw new Error('HTTP '+r.status); return r.json()};
+  try{ try{d=await getC()}catch(e1){await new Promise(r=>setTimeout(r,1500)); d=await getC()} }
+  catch(e){ if(!quiet){msg.hidden=false;msg.textContent='Price history could not be loaded. Charts need the live Hyperliquid feed: open the downloaded copy of this page in Chrome or Safari with an internet connection.';} return; }
+  if(!Array.isArray(d)||!d.length){msg.hidden=false;msg.textContent='No price history on Hyperliquid for this range.';return;}
+  if(typeof LightweightCharts==='undefined'){msg.hidden=false;msg.textContent='The chart library did not load (it comes from cdn.jsdelivr.net). Check your internet connection and reopen.';return;}
+  msg.hidden=true;
+  const off=-new Date().getTimezoneOffset()*60; // show times in the viewer's local clock
+  CM.data=d.map(k=>({time:Math.floor(k.t/1000)+off,open:+k.o,high:+k.h,low:+k.l,close:+k.c,value:+k.c,v:+k.v}));
+  drawChart(quiet);
+  const first=CM.data[0], last=CM.data[CM.data.length-1], hi=Math.max(...CM.data.map(x=>x.high)), lo=Math.min(...CM.data.map(x=>x.low));
+  const chg=pct(last.close,first.open), since=new Date(d[0].t).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'});
+  const short=tf.days>=365&&d[0].t>start+20*86400000;
+  document.getElementById('cmStats').innerHTML=[['Change · '+CM.tf,`<b class="${chg>=0?'pos':'neg'}">${chg>=0?'+':''}${chg.toFixed(2)}%</b>`],['High',`<b>${fmtU(CM.unit,hi)}</b>`],['Low',`<b>${fmtU(CM.unit,lo)}</b>`],['From high',`<b class="neg">${pct(last.close,hi).toFixed(1)}%</b>`],['Candle',`<b>${tf.iv}</b>`],['Data from',`<b>${since}</b>`]].map(x=>`<div><span>${x[0]}</span>${x[1]}</div>`).join('');
+  document.getElementById('cmNote').textContent=(short?'Hyperliquid only has this market’s history since '+since+', so long ranges start there. ':'')+(CM.unit==='pts'?'Hyperliquid index perp, in index points, 24/7.':'Hyperliquid perp prices (USD), 24/7.')+' Times in your local time zone. Chart updates every 15 s while open.';
+}
+function drawChart(keep){
+  const el=document.getElementById('cmChart');
+  const colors={bg:tok('--panel'),fg:tok('--ink2'),grid:tok('--grid'),up:tok('--up'),dn:tok('--down'),ac:tok('--accent')};
+  if(!CM.chart||!keep){
+    if(CM.chart)CM.chart.remove();
+    CM.chart=LightweightCharts.createChart(el,{autoSize:true,localization:{locale:'en-US',priceFormatter:p=>fmtU(CM.unit,p)},layout:{background:{type:'solid',color:colors.bg},textColor:colors.fg,fontFamily:'IBM Plex Mono, monospace'},
+      grid:{vertLines:{color:colors.grid},horzLines:{color:colors.grid}},rightPriceScale:{borderColor:colors.grid},
+      timeScale:{borderColor:colors.grid,timeVisible:TF.find(t=>t.k===CM.tf).days<=30,secondsVisible:false},crosshair:{mode:0}});
+    CM.series=CM.type==='candle'?CM.chart.addCandlestickSeries({upColor:colors.up,downColor:colors.dn,borderVisible:false,wickUpColor:colors.up,wickDownColor:colors.dn})
+      :CM.chart.addAreaSeries({lineColor:colors.ac,topColor:colors.ac+'55',bottomColor:colors.ac+'05',lineWidth:2});
+    CM.vol=CM.chart.addHistogramSeries({priceFormat:{type:'volume'},priceScaleId:'v',color:colors.grid,lastValueVisible:false,priceLineVisible:false});
+    CM.chart.priceScale('v').applyOptions({scaleMargins:{top:.82,bottom:0}});
+  }
+  CM.series.setData(CM.data.map(x=>CM.type==='candle'?{time:x.time,open:x.open,high:x.high,low:x.low,close:x.close}:{time:x.time,value:x.close}));
+  CM.vol.setData(CM.data.map(x=>({time:x.time,value:x.v,color:(x.close>=x.open?colors.up:colors.dn)+'66'})));
+  if(!keep)CM.chart.timeScale().fitContent();
+}
+(function(){
+  const tfb=document.getElementById('cmTf'), ty=document.getElementById('cmType');
+  tfb.innerHTML=TF.map(t=>`<button type="button" aria-pressed="${t.k===CM.tf}" data-k="${t.k}">${t.k}</button>`).join('');
+  tfb.addEventListener('click',e=>{const b=e.target.closest('button'); if(!b)return; CM.tf=b.dataset.k; tfb.querySelectorAll('button').forEach(x=>x.setAttribute('aria-pressed',x===b)); if(CM.chart){CM.chart.remove();CM.chart=null} loadCandles();});
+  ty.addEventListener('click',e=>{const b=e.target.closest('button'); if(!b)return; CM.type=b.dataset.t; ty.querySelectorAll('button').forEach(x=>x.setAttribute('aria-pressed',x===b)); if(CM.data.length){CM.chart&&CM.chart.remove();CM.chart=null;drawChart(false)}});
+  document.getElementById('cmClose').onclick=closeChart;
+  document.getElementById('cm').addEventListener('click',e=>{if(e.target.id==='cm')closeChart()});
+  addEventListener('keydown',e=>{if(e.key==='Escape'&&CM.open)closeChart()});
+  document.getElementById('cmFin').onclick=()=>{const id=CM.id;closeChart();const t=document.getElementById('tab-'+id);if(t){t.click();document.getElementById('tabs').scrollIntoView({behavior:RM?'auto':'smooth',block:'start'})}};
+  document.addEventListener('click',e=>{const t=e.target.closest('#tiles .tile[data-id], .tile.w[data-w], #score tr[data-id], #capTbl tr[data-cap]'); if(!t)return; e.preventDefault(); e.stopImmediatePropagation(); openChart(t.dataset.id||t.dataset.w||t.dataset.cap);},true);
+})();
+
+
+document.querySelector('#score-sec .note').insertAdjacentHTML('beforeend',' Operating margin (operating profit ÷ revenue) is the cleaner measure of how profitable the core business is; net margin can be pushed up or down by one-off investment gains, tax items and impairments. *SK hynix booked about ₩40tn of gains on its Kioxia stake in Q2, so its reported net profit (₩93.9tn) exceeded revenue (₩79.3tn); this is what the company reported, not a data error. †WD GAAP net income includes gains on its retained SanDisk shares (GAAP net margin 85%); the non-GAAP margin is shown.');
+
+// ---------- charts ----------
+const tip=document.getElementById('tip');
+function showTip(e,html){tip.innerHTML=html;tip.hidden=false;const x=Math.min(e.clientX+14,innerWidth-270);tip.style.left=x+'px';tip.style.top=(e.clientY+14)+'px'}
+function hideTip(){tip.hidden=true}
+function nice(v){const p=Math.pow(10,Math.floor(Math.log10(v)));const m=v/p;return (m<=1?1:m<=2?2:m<=2.5?2.5:m<=5?5:10)*p}
+function fmtV(c,v){if(v==null)return 'n/a';const s=c.cur==='¥'?Math.round(v).toLocaleString('en-US'):Math.abs(v)<10?v.toFixed(2):v.toFixed(1);return (v<0?'−':'')+c.cur+s.replace('-','')+c.unit}
+function barChart(c){
+  const el=document.getElementById('chart'); const W=Math.max(320,el.clientWidth), H=290, m={l:52,r:8,t:12,b:38};
+  const q=c.q, n=q.length, iw=W-m.l-m.r, ih=H-m.t-m.b;
+  const mx=Math.max(...q.map(x=>Math.max(x[2],x[3]||0))), mn=Math.min(0,...q.map(x=>x[3]||0));
+  const step=nice((mx-mn)/5), top=Math.ceil(mx/step)*step, bot=Math.floor(mn/step)*step;
+  const y=v=>m.t+ih-(v-bot)/(top-bot)*ih; const bw=iw/n, gw=Math.max(3,Math.min(18,(bw-6)/2));
+  let s=`<svg width="100%" viewBox="0 0 ${W} ${H}" role="img" aria-label="${c.name} quarterly revenue and net income">`;
+  for(let v=bot;v<=top+1e-9;v+=step){s+=`<line x1="${m.l}" x2="${W-m.r}" y1="${y(v)}" y2="${y(v)}" stroke="${v===0?'var(--muted)':'var(--grid)'}" stroke-width="1"/><text x="${m.l-6}" y="${y(v)+3.5}" text-anchor="end">${v<0?'−':''}${c.cur}${+Math.abs(v).toFixed(2)}</text>`}
+  q.forEach((d,i)=>{
+    const cx=m.l+bw*i+bw/2, g=d[4]==='g';
+    const rv=d[2], ni=d[3];
+    const rf=g?'var(--guide)':'var(--rev)', nf=g?'var(--guide)':'var(--ni)';
+    s+=`<rect x="${cx-gw-1}" y="${y(rv)}" width="${gw}" height="${Math.max(1,y(0)-y(rv))}" rx="2" fill="${rf}"/>`;
+    if(ni!=null){const yt=ni>=0?y(ni):y(0), hh=Math.max(1,Math.abs(y(ni)-y(0)));s+=`<rect x="${cx+1}" y="${yt}" width="${gw}" height="${hh}" rx="2" fill="${nf}" ${g?'stroke="var(--ni)" stroke-width="1" stroke-dasharray="2 2"':''}/>`}
+    if(oneOff(d)&&!g)s+=`<text x="${cx+1+gw/2}" y="${y(Math.max(ni,0))-4}" text-anchor="middle" style="fill:var(--ink);font-size:10px">◆</text>`;
+    const show=n<=10||i%2===(n-1)%2;
+    if(show)s+=`<text x="${cx}" y="${H-m.b+16}" text-anchor="middle">${d[0]}</text>`;
+    s+=`<rect class="hit" data-i="${i}" x="${m.l+bw*i}" y="${m.t}" width="${bw}" height="${ih}" fill="transparent"/>`;
+  });
+  s+='</svg>'; el.innerHTML=s;
+  el.querySelectorAll('.hit').forEach(r=>{r.addEventListener('mousemove',e=>{const i=+r.dataset.i,d=q[i];
+    const prev=q[i-1], ya=q[i-4];
+    const op=d[5]!=null?`<br>Op. profit ${fmtV(c,d[5])} (${(d[5]/d[2]*100).toFixed(1)}%)`:'';
+    const oo=oneOff(d)?`<br><span style="opacity:.8">◆ Net income above operating profit: non-operating gains or tax items</span>`:'';
+    const nmg=d[3]!=null?`<br>Net margin ${(d[3]/d[2]*100).toFixed(1)}%`:'';
+    const flag=d[4]==='g'?' (guidance)':d[4]==='p'?' (preliminary)':d[4]==='a'?' (≈ derived)':'';
+    showTip(e,`<b>${d[1]}</b>${flag}<br>Revenue ${fmtV(c,d[2])}${prev?` · QoQ ${pct(d[2],prev[2]).toFixed(0)}%`:''}${ya?` · YoY ${pct(d[2],ya[2]).toFixed(0)}%`:''}<br>Net income ${fmtV(c,d[3])}${op}${nmg}${oo}${d.nat?`<br><span style="opacity:.75">Reported: ${c.native.cur}${d.nat[0]}${c.native.unit} rev · ${d.nat[2]==null?'':c.native.cur+d.nat[2]+c.native.unit+' OP · '}${d.nat[1]==null?'NI n/a':c.native.cur+d.nat[1]+c.native.unit+' NI'} · FX ${d.fx}</span>`:''}`)});r.addEventListener('mouseleave',hideTip)});
+}
+function marginChart(c){
+  const el=document.getElementById('margin'); const W=Math.max(320,el.clientWidth), H=170, m={l:52,r:30,t:12,b:24};
+  const n=c.q.length, iw=W-m.l-m.r, ih=H-m.t-m.b, bw=iw/n;
+  const S=[{k:5,col:'var(--rev)',lab:'Operating'},{k:3,col:'var(--ni)',lab:'Net'}];
+  const vals=[];c.q.forEach(d=>S.forEach(o=>{if(d[o.k]!=null)vals.push(d[o.k]/d[2]*100)}));
+  let top=Math.max(100,Math.ceil(Math.max(...vals)/25)*25), bot=Math.min(0,Math.floor(Math.min(...vals)/25)*25);
+  if(bot<-100)bot=Math.floor(Math.min(...vals)/50)*50;
+  const stepv=(top-bot)>150?50:25; const y=v=>m.t+ih-(v-bot)/(top-bot)*ih;
+  let s=`<svg width="100%" viewBox="0 0 ${W} ${H}" role="img" aria-label="${c.name} operating and net margin">`;
+  for(let v=bot;v<=top;v+=stepv)s+=`<line x1="${m.l}" x2="${W-m.r}" y1="${y(v)}" y2="${y(v)}" stroke="${v===0?'var(--muted)':'var(--grid)'}"/><text x="${m.l-6}" y="${y(v)+3.5}" text-anchor="end">${v}%</text>`;
+  S.forEach(o=>{const pts=c.q.map((d,i)=>d[o.k]==null?null:[m.l+bw*i+bw/2,y(d[o.k]/d[2]*100),d]).filter(Boolean); if(!pts.length)return;
+    s+=`<path d="${pts.map((p,i)=>(i?'L':'M')+p[0].toFixed(1)+' '+p[1].toFixed(1)).join('')}" fill="none" stroke="${o.col}" stroke-width="2"/>`;
+    pts.forEach(p=>{s+=`<circle cx="${p[0]}" cy="${p[1]}" r="2.5" fill="${p[2][4]==='g'?'var(--panel)':o.col}" stroke="${o.col}" stroke-width="1.5"/>`});
+    const L=pts[pts.length-1]; let ly=L[1]+3.5; if(o.k===3&&window._lastLy!=null&&Math.abs(ly-window._lastLy)<12)ly=window._lastLy+(ly>=window._lastLy?12:-12); if(o.k===5)window._lastLy=ly; s+=`<text x="${L[0]+6}" y="${ly}" style="fill:var(--ink);font-weight:500">${(L[2][o.k]/L[2][2]*100).toFixed(0)}%</text>`;});
+  s+='</svg>'; el.innerHTML=s;
+}
+function qtable(c){
+  const t=document.getElementById('qtable');
+  let h=`<thead><tr><th>${c.name}</th>${c.q.map(d=>`<th>${d[1]}</th>`).join('')}</tr></thead><tbody>`;
+  const row=(lab,f)=>`<tr><td class="co">${lab}</td>${c.q.map((d,i)=>`<td>${f(d,i)}</td>`).join('')}</tr>`;
+  h+=row(`Revenue (${c.cur}${c.unit})`,d=>fmtV(c,d[2]).replace(c.cur,'').replace(c.unit,'')+(d[4]==='g'?'<sup>g</sup>':d[4]==='p'?'<sup>p</sup>':''));
+  h+=row('QoQ',(d,i)=>i?`<span class="${d[2]>=c.q[i-1][2]?'pos':'neg'}">${pct(d[2],c.q[i-1][2]).toFixed(0)}%</span>`:'');
+  h+=row('YoY',(d,i)=>i>=4?`<span class="${d[2]>=c.q[i-4][2]?'pos':'neg'}">${pct(d[2],c.q[i-4][2]).toFixed(0)}%</span>`:'');
+  h+=row(`Net income (${c.cur}${c.unit})`,d=>d[3]==null?'n/a':(d[4]==='a'?'≈':'')+(oneOff(d)?'◆ ':'')+fmtV(c,d[3]).replace(c.cur,'').replace(c.unit,''));
+  h+=row(`Op. profit (${c.cur}${c.unit})`,d=>d[5]==null?'':fmtV(c,d[5]).replace(c.cur,'').replace(c.unit,''));
+  h+=row('Op. margin',d=>d[5]==null?'':(d[5]/d[2]*100).toFixed(1)+'%');
+  h+=row('Net margin',d=>d[3]==null?'':(oneOff(d)?'◆ ':'')+(d[3]/d[2]*100).toFixed(1)+'%');
+  t.innerHTML=h+'</tbody>';
+}
+function facts(c){
+  const f=document.getElementById('facts');
+  f.innerHTML=`<h3>${c.name}</h3><dl>${c.facts.map(x=>`<dt>${x[0]}</dt><dd>${x[1]}</dd>`).join('')}</dl><ul>${c.notes.map(x=>`<li>${x}</li>`).join('')}</ul>`;
+  document.getElementById('chartTitle').textContent=`${c.name} · ${c.cur}${c.unit} per quarter`;
+  document.getElementById('chartNote').textContent='◆ marks quarters where net income is above operating profit, which means one-off investment gains or tax items lifted it. Hover a quarter for details.'+(c.id==='WDC'?' Net income here is GAAP continuing operations.':'');
+  if(c.native)document.getElementById('chartNote').textContent+=` Converted from ${c.native.cur==='₩'?'won':'yen'} at each quarter’s average exchange rate, so USD growth rates differ slightly from reported ones.`;
+}
+let cur=CO[0];
+function render(){barChart(cur);marginChart(cur);qtable(cur);facts(cur)}
+const tabs=document.getElementById('tabs');
+CO.forEach((c,i)=>{const b=document.createElement('button');b.className='tab';b.id='tab-'+c.id;b.setAttribute('role','tab');b.setAttribute('aria-selected',i===0);b.textContent=c.name;b.onclick=()=>{cur=c;tabs.querySelectorAll('.tab').forEach(x=>x.setAttribute('aria-selected',x===b));try{localStorage.setItem('mem-tab',c.id)}catch(e){}render()};tabs.appendChild(b)});
+try{const s=localStorage.getItem('mem-tab');const c=CO.find(x=>x.id===s);if(c)document.getElementById('tab-'+c.id).click();else render()}catch(e){render()}
+addEventListener('resize',()=>{clearTimeout(window._rt);window._rt=setTimeout(render,150)});
+
+// ---------- timeline ----------
+const TL=[
+ ['18–25 Jun','co','<b>Everything peaks.</b> Micron reports FQ3 ($41.5bn revenue) on 24 Jun; all seven stocks set all-time highs that week.'],
+ ['2 Jul','ai','<b>KOSPI −7.9%.</b> AI-spend doubts and a report that Meta will resell spare compute. SK hynix −15%, Samsung −9%. SK hynix announces ₩100tn of new fabs.'],
+ ['13 Jul','flow','<b>SK hynix lists ADRs on Nasdaq</b> at $149 and posts its worst one-day drop on record as euphoria cools.'],
+ ['16 Jul','macro','<b>Bank of Korea hikes</b> 25bp to 2.75%, its first hike since 2023. SK hynix −10%, Micron −8%.'],
+ ['28 Jul','ai','<b>AI financing scare.</b> Report of a ~$250bn Nvidia backstop for an OpenAI project. CXMT\'s strong IPO and China DUV-tool progress add pressure.'],
+ ['29 Jul','co','<b>SK hynix Q2 misses</b> revenue and OP consensus despite record profit. Shares fall as much as 18%.'],
+ ['20–24 Aug','flow','<b>₩55tn of buybacks begin</b> (SK hynix ₩40tn, Samsung ₩15tn). Stocks rebound into September.'],
+ ['14 Sep','ai','<b>Anthropic CEO essay</b> urges slowing AI capability gains; Micron and SanDisk −6%, SK hynix −7%.'],
+ ['30 Sep','co','<b>Micron blowout:</b> $54.2bn quarter, $61.5bn guide, shortage "into 2028". Stock peaks locally at $1,097 on 1 Oct, then fades.'],
+ ['1–2 Oct','china','<b>Toshiba to double HDD output.</b> Seagate −10–12%, WD −7–10%.'],
+ ['6–8 Oct','flow','<b>Samsung buyback finishes early</b>; Q3 preliminary revenue misses consensus by ~3%.'],
+ ['12–13 Oct','china','<b>CXMT 4F² DRAM claim.</b> KOSPI −5.5% with a sidecar; SK hynix −9%, Samsung −7%. Memory trio loses ~$100bn in a day.'],
+ ['14–15 Oct','macro','<b>Hot US CPI</b> lifts October Fed-hike odds to 46%; chip index −7% in five sessions. Korea extends losses on 15 Oct.']
+];
+const tagName={macro:'Rates',china:'Supply',ai:'AI demand',flow:'Flows',co:'Company'};
+document.getElementById('timeline').innerHTML=TL.map(t=>`<li><time>${t[0]}</time><div><span class="tag t-${t[1]}">${tagName[t[1]]}</span>${t[2]}</div></li>`).join('');
+
+// ---------- scenario ----------
+function scen(){
+  const v=+document.getElementById('shock').value; document.getElementById('shockVal').textContent=(v>0?'+':'')+v+'%';
+  let h='<thead><tr><th>Company</th><th>Mkt cap</th><th>Run-rate profit / yr</th><th>Basis</th><th>P/E today</th><th>P/E at scenario</th></tr></thead><tbody>';
+  for(const c of CO){const r=RUN[c.id], pe=c.mcapUSD/r, pe2=c.mcapUSD/(r*(1+v/100));
+    const cls=pe2>20?'neg':pe2<10?'pos':'';
+    h+=`<tr><td class="co">${c.name}</td><td>$${c.mcapUSD}bn</td><td>$${r.toFixed(0)}bn</td><td style="color:var(--muted);font-size:12px">${RUNNOTE[c.id]}</td><td>${pe.toFixed(1)}×</td><td class="${cls}"><b>${pe2.toFixed(1)}×</b></td></tr>`}
+  document.getElementById('scenTbl').innerHTML=h+'</tbody>';
+}
+document.getElementById('shock').addEventListener('input',scen); scen();
+</script>
+<!-- ===== Earnings calendar + on-load popup (dates researched 25 Oct 2026) ===== -->
+<style>
+#earnings .e-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;background:var(--panel);border:1px solid var(--line);border-radius:10px;overflow:hidden}
+#earnings .e-grp{font-size:13px;font-weight:600;color:var(--ink2);padding:12px 16px 6px;background:var(--panel)}
+#earnings .e-row{display:grid;grid-template-columns:64px minmax(0,1.4fr) minmax(0,1.3fr) auto;gap:14px;align-items:center;padding:12px 16px;border-top:1px solid var(--grid);cursor:pointer;transition:background-color .2s}
+#earnings .e-row:hover{background:color-mix(in srgb,var(--accent) 5%,var(--panel))}
+#earnings .e-row.hot{background:color-mix(in srgb,var(--accent) 9%,var(--panel));box-shadow:inset 3px 0 0 var(--accent)}
+#earnings .e-row.past{opacity:.62}
+.e-date{display:flex;flex-direction:column;align-items:center;justify-content:center;border-radius:8px;background:var(--chip);padding:6px 0;line-height:1.1}
+.e-date b{font-family:var(--f-display);font-size:22px;font-weight:800;font-variant-numeric:tabular-nums}
+.e-date span{font-size:11.5px;color:var(--ink2)}
+.e-row.hot .e-date{background:var(--accent);color:#fff}.e-row.hot .e-date span{color:#fff}
+.e-co{display:flex;flex-direction:column;min-width:0}
+.e-co b{font-weight:600}
+.e-co small{font-family:var(--f-mono);font-size:11px;color:var(--muted)}
+.e-when{font-size:13px;color:var(--ink2);display:flex;flex-direction:column;gap:1px}
+.e-when .ist{font-family:var(--f-mono);font-size:11.5px;color:var(--muted)}
+.e-st{display:flex;flex-direction:column;align-items:flex-end;gap:4px;white-space:nowrap}
+.e-pill{font-size:11.5px;font-weight:500;padding:2px 9px;border-radius:999px}
+.e-pill.c{background:color-mix(in srgb,var(--up) 14%,transparent);color:var(--up)}
+.e-pill.e{background:color-mix(in srgb,var(--warn) 16%,transparent);color:var(--warn)}
+.e-pill.r{background:var(--chip);color:var(--muted)}
+.e-cd{font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums}
+.e-row.hot .e-cd{color:var(--accent);font-weight:600}
+@media (max-width:640px){#earnings .e-row{grid-template-columns:54px minmax(0,1fr) auto;gap:10px}#earnings .e-when{grid-column:2/4;grid-row:2}.e-date b{font-size:19px}}
+/* popup */
+.ep{position:fixed;inset:0;z-index:30;display:flex;align-items:center;justify-content:center;padding:16px;background:color-mix(in srgb,var(--ink) 45%,transparent)}
+.ep-box{background:var(--panel);color:var(--ink);border:1px solid var(--line);border-radius:14px;width:min(520px,100%);max-height:100%;overflow:auto;padding:20px;display:flex;flex-direction:column;gap:14px;box-shadow:0 20px 60px rgba(0,0,0,.35)}
+.ep-h{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
+.ep-h h3{font-size:20px}
+.ep-h p{font-size:13px;color:var(--ink2);margin-top:2px}
+.ep-sec{display:flex;flex-direction:column;gap:6px}
+.ep-sec>span{font-size:13px;font-weight:600;color:var(--ink2)}
+.ep-item{display:flex;justify-content:space-between;gap:10px;align-items:baseline;padding:10px 12px;border-radius:10px;background:var(--chip);cursor:pointer;transition:background-color .2s,transform .15s}
+.ep-item:hover{background:color-mix(in srgb,var(--accent) 12%,var(--chip))}
+.ep-item:active{transform:scale(.98)}
+.ep-item b{font-weight:600}
+.ep-item small{display:block;font-size:12px;color:var(--ink2)}
+.ep-item .t{font-family:var(--f-mono);font-size:12px;color:var(--muted);text-align:right;white-space:nowrap}
+.ep-none{font-size:14px;color:var(--ink2);padding:10px 12px;border-radius:10px;background:var(--chip)}
+.ep-foot{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;align-items:center}
+.ep-foot .note{margin:0}
+</style>
+<script>
+(function(){
+  // date = report date in the company's home market; at = release/call time (UTC); ok = company has announced it
+  const EARN=[
+    {id:'SPCX',name:'SpaceX',tk:'SPCX',q:'Q3 2026',date:'2026-10-20',when:'Reported',ok:1,src:'https://www.cnbc.com/2026/10/20/spacex-spcx-earnings-live-updates-q3-2026html.html'},
+    {id:'META',name:'Meta',tk:'META',q:'Q3 2026',date:'2026-10-21',when:'After US close · call 4:30 pm ET',at:'2026-10-21T20:30:00Z',ok:1,src:'https://investor.atmeta.com/investor-news/press-release-details/2026/Meta-to-Announce-Third-Quarter-2026-Results/default.aspx'},
+    {id:'WDC',name:'Western Digital',tk:'WDC',q:'FQ1 2027',date:'2026-10-22',when:'After US close',ok:1,src:'https://www.westerndigital.com/company/newsroom/press-releases/2026/2026-10-08-wd-to-announce-first-quarter-fiscal-year-2027-financial-results'},
+    {id:'STX',name:'Seagate',tk:'STX',q:'FQ1 2027',date:'2026-10-27',when:'After US close · call 5:00 pm ET',at:'2026-10-27T21:00:00Z',ok:1,src:'https://www.morningstar.com/news/business-wire/20261013435133/seagate-technology-to-report-fiscal-first-quarter-2027-financial-results-on-october-27-2026'},
+    {id:'SKH',name:'SK hynix',tk:'000660 · SKHY',q:'Q3 2026',date:'2026-10-28',when:'Morning release · call 9:00 am KST',at:'2026-10-28T00:00:00Z',ok:1,src:'https://news.skhynix.com/en/q3-2026-earnings-conference-call-invitation/'},
+    {id:'GOOGL',name:'Alphabet (Google)',tk:'GOOGL',q:'Q3 2026',date:'2026-10-28',when:'After US close · call 4:30 pm ET',at:'2026-10-28T20:30:00Z',ok:1,src:'https://www.stocktitan.net/articles/earnings-calendar-week-of-october-26-2026'},
+    {id:'SEC',name:'Samsung Electronics',tk:'005930',q:'Q3 2026 full results',date:'2026-10-29',when:'Call 10:00 am KST',at:'2026-10-29T01:00:00Z',ok:1,src:'https://www.investegate.co.uk/announcement/rns/samsung-electronics-co-ltd-att---smsd/notice-of-3q-2026-earnings-release-schedule/9812151'},
+    {id:'SNDK',name:'SanDisk',tk:'SNDK',q:'FQ1 2027',date:'2026-10-29',when:'After US close · call 4:30 pm ET',at:'2026-10-29T20:30:00Z',ok:1,src:'https://www.sandisk.com/company/newsroom/press-releases/2026/2026-09-29-sandisk-to-report-first-quarter-fiscal-year-2027-results-on-october-29-2026'},
+    {id:'AMZN',name:'Amazon',tk:'AMZN',q:'Q3 2026',date:'2026-10-29',when:'After US close · call 5:00 pm ET',at:'2026-10-29T21:00:00Z',ok:1,src:'https://www.stocktitan.net/articles/earnings-calendar-week-of-october-26-2026'},
+    {id:'KIOX',name:'Kioxia',tk:'285A',q:'Q2 FY2026',date:'2026-10-30',when:'After Tokyo close · 6:45 pm JST',at:'2026-10-30T09:45:00Z',ok:1,src:'https://www.kioxia-holdings.com/en-jp/news/2026.html'},
+    {id:'CXMT',name:'CXMT (ChangXin Memory)',tk:'Shanghai STAR',q:'Q3 2026 full report',date:'2026-10-31',when:'Due by the exchange deadline · preliminary figures out 16 Oct',ok:0,by:1,src:'https://finance.biggo.com/news/fd2602f8-65b1-4f5e-b1e9-9ed22f91d7dc'},
+    {id:'AMD',name:'AMD',tk:'AMD',q:'Q3 2026',date:'2026-11-03',when:'After US close · call 5:00 pm ET',at:'2026-11-03T22:00:00Z',ok:1,src:'https://ir.amd.com/news-events/press-releases/detail/1300/amd-to-report-fiscal-third-quarter-2026-financial-results'},
+    {id:'AAOI',name:'Applied Optoelectronics',tk:'AAOI',q:'Q3 2026',date:'2026-11-05',when:'After US close · call 4:30 pm ET',at:'2026-11-05T21:30:00Z',ok:1,src:'https://www.stocktitan.net/news/AAOI/applied-optoelectronics-announces-date-of-third-quarter-2026-s2qvjkjlf9jn.html'},
+    {id:'CBRS',name:'Cerebras',tk:'CBRS',q:'Q3 2026',date:'2026-11-12',when:'After US close · call 5:00 pm ET',at:'2026-11-12T22:00:00Z',ok:1,src:'https://www.stocktitan.net/news/CBRS/cerebras-systems-announces-date-of-third-quarter-2026-financial-wglucxie9phw.html'},
+    {id:'NVDA',name:'Nvidia',tk:'NVDA',q:'FQ3 2027',date:'2026-11-18',when:'Expected after US close · call ~5:00 pm ET',at:'2026-11-18T22:00:00Z',ok:0,src:'https://www.marketbeat.com/earnings/reports/2026-11-18-nvidia-co-stock/'},
+    {id:'MU',name:'Micron',tk:'MU',q:'FQ1 2027',date:'2026-12-23',when:'Expected after US close',ok:0,src:'https://www.wallstreethorizon.com/micron-earnings-calendar'}
+  ];
+  const TZ='Asia/Kolkata';
+  const ymd=d=>new Intl.DateTimeFormat('en-CA',{timeZone:TZ,year:'numeric',month:'2-digit',day:'2-digit'}).format(d);
+  const now=new Date(),today=ymd(now),tom=ymd(new Date(now.getTime()+86400000));
+  const dayDiff=s=>Math.round((Date.parse(s+'T00:00:00Z')-Date.parse(today+'T00:00:00Z'))/86400000);
+  const istT=e=>e.at?new Date(e.at).toLocaleString('en-GB',{timeZone:TZ,weekday:'short',day:'numeric',month:'short',hour:'2-digit',minute:'2-digit',hour12:false})+' IST':'';
+  const istDay=e=>e.at?ymd(new Date(e.at)):e.date;
+  const past=e=>e.when==='Reported'||(e.at?Date.parse(e.at)<now.getTime()-2*3600000:dayDiff(e.date)<0);
+  const onDay=(e,d)=>e.date===d||istDay(e)===d;
+  const fmtD=s=>{const d=new Date(s+'T00:00:00Z');return {day:d.getUTCDate(),mon:d.toLocaleDateString('en-GB',{month:'short',timeZone:'UTC'}),wd:d.toLocaleDateString('en-GB',{weekday:'short',timeZone:'UTC'})};};
+  const cd=e=>{if(past(e))return 'Reported';if(onDay(e,today))return 'Today';if(onDay(e,tom))return 'Tomorrow';const n=dayDiff(e.date);return (e.by?'due ':'')+'in '+n+' day'+(n===1?'':'s');};
+  const pill=e=>past(e)?'<span class="e-pill r">Reported</span>':e.ok?'<span class="e-pill c">Confirmed</span>':`<span class="e-pill e">${e.by?'Deadline':'Estimated'}</span>`;
+
+  // section
+  const sec=document.createElement('section');sec.className='live';sec.id='earnings';sec.setAttribute('aria-label','Earnings');
+  const up=EARN.filter(e=>!past(e)).sort((a,b)=>a.date<b.date?-1:a.date>b.date?1:0),done=EARN.filter(past).sort((a,b)=>a.date<b.date?1:-1);
+  const row=e=>{const f=fmtD(e.date),hot=!past(e)&&(onDay(e,today)||onDay(e,tom));
+    return `<li class="e-row${hot?' hot':''}${past(e)?' past':''}" data-eid="${e.id}" tabindex="0" title="Open price chart">
+      <div class="e-date"><b>${f.day}</b><span>${f.mon} · ${f.wd}</span></div>
+      <div class="e-co"><b>${e.name}</b><small>${e.tk} · ${e.q}</small></div>
+      <div class="e-when"><span>${e.when}</span>${e.at&&!past(e)?`<span class="ist">${istT(e)}</span>`:''}</div>
+      <div class="e-st">${pill(e)}<span class="e-cd">${cd(e)}</span></div></li>`;};
+  sec.innerHTML=`<div class="sec-head"><span class="eyebrow">Earnings calendar · every listed company on this page</span><h2>Earnings</h2>
+    <p class="lede">When each company reports its next results. Dates are in the company's home market; the grey line gives the release or call time in IST. Highlighted rows report today or tomorrow. Tap a row for its price chart.</p></div>
+    <ul class="e-list">${up.length?'<li class="e-grp">Coming up</li>'+up.map(row).join(''):''}${done.length?'<li class="e-grp">Reported this season</li>'+done.map(row).join(''):''}</ul>
+    <p class="note" style="margin:0">Confirmed = the company has announced the date. Estimated = projected from past schedules (Nvidia, Micron) and may move. CXMT's date is the Shanghai exchange's 31 Oct deadline for third-quarter reports. OpenAI and Anthropic are private and do not publish results. Checked 25 Oct 2026 against company investor-relations notices: ${EARN.filter(e=>e.ok).length} confirmed, ${EARN.filter(e=>!e.ok).length} estimated.</p>`;
+  const idx=document.getElementById('indices');idx.after(sec);
+  const go=id=>{if(typeof openChart==='function')openChart(id);};
+  sec.addEventListener('click',e=>{const r=e.target.closest('.e-row');if(r)go(r.dataset.eid);});
+  sec.addEventListener('keydown',e=>{const r=e.target.closest('.e-row');if(r&&(e.key==='Enter'||e.key===' ')){e.preventDefault();go(r.dataset.eid);}});
+  window.__EARN={EARN,today,tom,onDay,past,istT,fmtD};
+
+  // popup on every load
+  const RMQ=matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const tdy=EARN.filter(e=>onDay(e,today)),tmw=EARN.filter(e=>onDay(e,tom)&&!onDay(e,today));
+  const item=e=>`<div class="ep-item" data-eid="${e.id}"><div><b>${e.name}</b><small>${e.q} · ${e.when}</small></div><div class="t">${past(e)?'Out':istT(e)||e.date}</div></div>`;
+  const nextUp=up.filter(e=>!onDay(e,today)&&!onDay(e,tom)).slice(0,3);
+  const tf=s=>{const f=fmtD(s);return f.wd+' '+f.day+' '+f.mon;};
+  const ep=document.createElement('div');ep.className='ep';ep.setAttribute('role','dialog');ep.setAttribute('aria-modal','true');ep.setAttribute('aria-labelledby','epT');
+  ep.innerHTML=`<div class="ep-box">
+    <div class="ep-h"><div><h3 id="epT">Earnings today and tomorrow</h3><p>${tf(today)} and ${tf(tom)} · IST</p></div><button class="cm-close" type="button" aria-label="Close">×</button></div>
+    <div class="ep-sec"><span>Today · ${tf(today)}</span>${tdy.length?tdy.map(item).join(''):'<div class="ep-none">No company on this page reports today.</div>'}</div>
+    <div class="ep-sec"><span>Tomorrow · ${tf(tom)}</span>${tmw.length?tmw.map(item).join(''):'<div class="ep-none">No company on this page reports tomorrow.</div>'}</div>
+    ${nextUp.length?`<div class="ep-sec"><span>Next up</span>${nextUp.map(e=>`<div class="ep-item" data-eid="${e.id}"><div><b>${e.name}</b><small>${e.q} · ${e.when}</small></div><div class="t">${tf(e.date)}</div></div>`).join('')}</div>`:''}
+    <div class="ep-foot"><p class="note">Tap a company for its price chart.</p><button class="btn" type="button" data-cal>See full calendar ↓</button></div></div>`;
+  let opened=false;
+  const close=(then)=>{if(!opened)return;opened=false;const fin=()=>{ep.remove();document.removeEventListener('keydown',esc,true);if(then)then();};
+    if(RMQ||!ep.animate){fin();return;}ep.animate([{opacity:1},{opacity:0}],{duration:160,fill:'forwards'});ep.querySelector('.ep-box').animate([{transform:'none'},{transform:'translateY(10px) scale(.98)'}],{duration:160,fill:'forwards'}).onfinish=fin;};
+  const esc=e=>{if(e.key==='Escape'&&opened){e.stopPropagation();close();}};
+  ep.addEventListener('click',e=>{if(e.target===ep||e.target.closest('.cm-close'))return close();
+    if(e.target.closest('[data-cal]'))return close(()=>{const s=document.getElementById('earnings');s.scrollIntoView({behavior:RMQ?'auto':'smooth',block:'start'});});
+    const it=e.target.closest('.ep-item');if(it)close(()=>go(it.dataset.eid));});
+  const show=()=>{document.body.appendChild(ep);opened=true;document.addEventListener('keydown',esc,true);
+    if(!RMQ&&ep.animate){ep.animate([{opacity:0},{opacity:1}],{duration:220,easing:'ease-out'});
+      ep.querySelector('.ep-box').animate([{opacity:0,transform:'translateY(16px) scale(.96)'},{opacity:1,transform:'none'}],{duration:360,easing:'cubic-bezier(.2,.7,.2,1)'});
+      ep.querySelectorAll('.ep-item,.ep-none').forEach((x,i)=>x.animate([{opacity:0,transform:'translateY(8px)'},{opacity:1,transform:'none'}],{duration:320,delay:140+i*60,fill:'backwards',easing:'cubic-bezier(.2,.7,.2,1)'}));}
+    setTimeout(()=>{const b=ep.querySelector('.cm-close');b&&b.focus();},0);};
+  if(document.readyState==='complete')setTimeout(show,500);else addEventListener('load',()=>setTimeout(show,500));
+})();
+</script>
+<!-- ===== UI/UX layer (v8): motion, jump bar, sortable tables, chart hover, calmer type. Data untouched. ===== -->
+<style>
+:root{--ease:cubic-bezier(.2,.7,.2,1);--ease-io:cubic-bezier(.65,0,.35,1)}
+/* calmer type */
+.eyebrow{font-family:var(--f-body);font-size:13px;font-weight:500;letter-spacing:0;text-transform:none;color:var(--ink2)}
+th{font-family:var(--f-body);font-size:12px;font-weight:500;letter-spacing:0;text-transform:none}
+.cm-stats span,.cap-k span{font-family:var(--f-body);font-size:12px;letter-spacing:0;text-transform:none}
+.tk-badge{text-transform:none;letter-spacing:.01em}
+.tag{font-family:var(--f-body);font-size:11px;font-weight:500;letter-spacing:0;text-transform:none}
+h1{letter-spacing:-.022em;line-height:1.05}
+h2{letter-spacing:-.016em}
+/* jump bar */
+.jb{position:sticky;top:var(--tkh,38px);z-index:5;background:var(--bg);border-bottom:1px solid var(--line)}
+.jb-in{position:relative;display:flex;gap:2px;overflow-x:auto;scrollbar-width:none;padding-left:max(clamp(16px,4vw,60px),env(safe-area-inset-left,0px));padding-right:max(clamp(16px,4vw,60px),env(safe-area-inset-right,0px))}
+.jb-in::-webkit-scrollbar{display:none}
+.jb a{flex:none;font-size:13px;font-weight:500;color:var(--ink2);text-decoration:none;padding:10px 10px 11px;border-radius:6px;white-space:nowrap;transition:color .2s}
+.jb a:hover{color:var(--ink)}
+.jb a.on{color:var(--ink)}
+.jb-ind{position:absolute;left:0;bottom:0;height:2px;border-radius:2px;background:var(--accent);width:0;transition:transform .45s var(--ease),width .45s var(--ease)}
+html{scroll-behavior:smooth}
+.wrap>section,.wrap>header{scroll-margin-top:calc(var(--tkh,38px) + var(--jbh,42px) + 14px)}
+/* jump bar: glow on hover, glow on arrival */
+.jb a{position:relative;transition:color .2s,background-color .25s,box-shadow .3s,text-shadow .3s,transform .15s var(--ease)}
+.jb a:hover,.jb a:focus-visible{color:var(--accent);background:color-mix(in srgb,var(--accent) 13%,var(--bg));box-shadow:0 0 0 1px color-mix(in srgb,var(--accent) 45%,transparent),0 0 22px 4px color-mix(in srgb,var(--accent) 50%,transparent);text-shadow:0 0 12px color-mix(in srgb,var(--accent) 70%,transparent);outline:none}
+.jb a:active{transform:scale(.95)}
+.jb a.on{color:var(--accent)}
+.jb-ind{box-shadow:0 0 10px 1px color-mix(in srgb,var(--accent) 70%,transparent)}
+.jb-arrive{animation:jb-glow 1.6s var(--ease) 1;border-radius:14px}
+@keyframes jb-glow{0%{box-shadow:0 0 0 0 color-mix(in srgb,var(--accent) 0%,transparent)}25%{box-shadow:0 0 0 2px color-mix(in srgb,var(--accent) 55%,transparent),0 0 34px 6px color-mix(in srgb,var(--accent) 30%,transparent)}100%{box-shadow:0 0 0 0 transparent}}
+@media (prefers-reduced-motion:reduce){.jb-arrive{animation:none;outline:2px solid var(--accent);outline-offset:4px}}
+/* tiles: press + hover */
+.tile{transition:transform .18s var(--ease),border-color .2s,background-color .25s}
+.tile:hover{background-color:color-mix(in srgb,var(--accent) 4%,var(--panel))}
+.tile:active{transform:scale(.975)}
+.t-px{transition:color .3s}
+.t-px.tick-up{color:var(--up)}.t-px.tick-dn{color:var(--down)}
+.btn,.cm-close,.seg button,.tab{transition:background-color .2s,color .2s,border-color .2s,transform .15s var(--ease)}
+.btn:active,.cm-close:active,.seg button:active,.tab:active{transform:scale(.96)}
+.btn:hover{background:color-mix(in srgb,var(--accent) 8%,transparent)}
+/* sliding company-tab pill */
+#tabs{position:relative}
+#tabs .tab{position:relative;z-index:1}
+#tabs.slide .tab[aria-selected="true"]{background:transparent;border-color:transparent}
+.tab-ind{position:absolute;left:0;top:0;z-index:0;border-radius:999px;background:var(--accent);pointer-events:none;transition:transform .42s var(--ease),width .42s var(--ease),height .42s var(--ease)}
+/* tables */
+.tbl-wrap tbody tr{transition:background-color .15s}
+.tbl-wrap tbody tr:hover td{background:color-mix(in srgb,var(--accent) 5%,var(--panel))}
+#score tbody tr:hover td.k{background:color-mix(in srgb,var(--accent) 12%,var(--panel))}
+th.sortable{cursor:pointer;user-select:none}
+th.sortable:hover{color:var(--ink)}
+th.sortable::after{content:"↕";margin-left:5px;opacity:.3;font-size:11px}
+th[aria-sort="ascending"]::after{content:"↑";opacity:1;color:var(--accent)}
+th[aria-sort="descending"]::after{content:"↓";opacity:1;color:var(--accent)}
+#score th:first-child,#score td:first-child,#qtable th:first-child,#qtable td:first-child,#scenTbl th:first-child,#scenTbl td:first-child{position:sticky;left:0;background:var(--panel);z-index:1}
+#score th:first-child,#qtable th:first-child,#scenTbl th:first-child{z-index:3}
+@media (max-width:760px){#score td:first-child,#qtable td:first-child,#scenTbl td:first-child{box-shadow:1px 0 0 var(--line)}}
+/* chart hover */
+.tip{transition:left .09s ease-out,top .09s ease-out}
+.tip:not([hidden]){animation:fx-tip .16s var(--ease)}
+@keyframes fx-tip{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+#chart rect:not(.hit),#chart text{transition:opacity .2s}
+#chart .hit,#margin .mhit{transition:fill .2s}
+/* scroll reveal (only applied when script runs) */
+.fx .rv{opacity:0;transform:translateY(18px)}
+.fx .rv.in{opacity:1;transform:none;transition:opacity .7s var(--ease) var(--d,0ms),transform .7s var(--ease) var(--d,0ms)}
+@media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}.fx .rv{opacity:1;transform:none}.tip:not([hidden]){animation:none}.jb-ind,.tab-ind{transition:none}}
+/* jump bar: ~30% larger so it is noticed first */
+.jb{background:color-mix(in srgb,var(--accent) 6%,var(--bg));border-bottom:1px solid color-mix(in srgb,var(--accent) 30%,var(--line))}
+.jb-in{gap:4px}
+.jb a{font-size:17px;font-weight:600;padding:13px 14px 15px;letter-spacing:-.005em}
+.jb-ind{height:3px}
+/* hero headline */
+h1.hero{font-family:"Bricolage Grotesque",var(--f-display);font-size:clamp(34px,5.6vw,64px);font-weight:800;line-height:1.02;letter-spacing:-.03em;font-variation-settings:"opsz" 96}
+.hero .w{display:inline-block;animation:h-rise .8s var(--ease) both;animation-delay:calc(var(--i)*70ms)}
+.hero .h-up .w,.hero .h-dn .w{background-size:220% 100%;-webkit-background-clip:text;background-clip:text;color:transparent;animation:h-rise .8s var(--ease) both,h-shine 6s linear 1.2s infinite;animation-delay:calc(var(--i)*70ms),1.2s}
+.hero .h-up .w{background-image:linear-gradient(100deg,var(--up) 0%,var(--up) 40%,color-mix(in srgb,var(--up) 45%,#fff) 50%,var(--up) 60%,var(--up) 100%)}
+.hero .h-dn .w{background-image:linear-gradient(100deg,var(--down) 0%,var(--down) 40%,color-mix(in srgb,var(--down) 45%,#fff) 50%,var(--down) 60%,var(--down) 100%)}
+@keyframes h-rise{from{opacity:0;transform:translateY(.45em) rotate(2deg);filter:blur(6px)}to{opacity:1;transform:none;filter:none}}
+@keyframes h-shine{0%{background-position:100% 0}35%,100%{background-position:-20% 0}}
+header>.eyebrow{animation:h-fade .6s var(--ease) both}
+header>.lede,header>.stamp{animation:h-fade .8s var(--ease) both;animation-delay:.75s}
+header>.stamp{animation-delay:.95s}
+@keyframes h-fade{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+@media (prefers-reduced-motion:reduce){.hero .w,header>.eyebrow,header>.lede,header>.stamp{animation:none!important}}
+</style>
+<script>
+(function(){
+  const RMQ=matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const A=(el,kf,o)=>{if(RMQ||!el||!el.animate)return null;return el.animate(kf,Object.assign({easing:'cubic-bezier(.2,.7,.2,1)',fill:'backwards'},o));};
+  const wrap=document.querySelector('.wrap');
+
+  /* ---------- section ids + jump bar ---------- */
+  const H2ID=[['Quarterly revenue','companies'],['How each company','check'],['Why the stocks fell','why'],['What the order books','outlook'],['Where the numbers','sources']];
+  wrap.querySelectorAll(':scope>section').forEach(s=>{if(s.id)return;const h=s.querySelector('h2');if(!h)return;const m=H2ID.find(x=>h.textContent.includes(x[0]));if(m)s.id=m[1];});
+  const LINKS=[['live','Memory'],['ai','AI'],['watch','Crypto'],['indices','Indices'],['earnings','Earnings'],['etfs','ETFs'],['caps','Market cap'],['score-sec','Scoreboard'],['companies','Companies'],['check','Data check'],['why','Why it fell'],['outlook','Outlook'],['sources','Sources']].filter(l=>document.getElementById(l[0]));
+  const ticker=document.querySelector('.ticker');
+  const jb=document.createElement('nav');jb.className='jb';jb.setAttribute('aria-label','Sections');
+  jb.innerHTML='<div class="jb-in">'+LINKS.map(l=>`<a href="#${l[0]}" data-s="${l[0]}">${l[1]}</a>`).join('')+'<span class="jb-ind"></span></div>';
+  ticker.after(jb);
+  const jbIn=jb.querySelector('.jb-in'),ind=jb.querySelector('.jb-ind');
+  const sizes=()=>{document.documentElement.style.setProperty('--tkh',ticker.offsetHeight+'px');document.documentElement.style.setProperty('--jbh',jb.offsetHeight+'px');};
+  sizes();addEventListener('resize',()=>{sizes();moveInd();});
+  let active=null;
+  function moveInd(){const a=jb.querySelector('a.on');if(!a){ind.style.width='0';return;}ind.style.width=(a.offsetWidth-20)+'px';ind.style.transform=`translateX(${a.offsetLeft+10}px)`;}
+  function setActive(id){if(id===active)return;active=id;jb.querySelectorAll('a').forEach(a=>a.classList.toggle('on',a.dataset.s===id));moveInd();
+    const a=jb.querySelector('a.on');if(a){const l=a.offsetLeft-jbIn.clientWidth/2+a.offsetWidth/2;jbIn.scrollTo({left:l,behavior:RMQ?'auto':'smooth'});}}
+  let ticking=false;
+  function spy(){ticking=false;const off=ticker.offsetHeight+jb.offsetHeight+60;let cur=LINKS[0][0];
+    for(const [id] of LINKS){const el=document.getElementById(id);if(el&&el.getBoundingClientRect().top<=off)cur=id;}
+    if(innerHeight+scrollY>=document.documentElement.scrollHeight-4)cur=LINKS[LINKS.length-1][0];
+    setActive(cur);}
+  addEventListener('scroll',()=>{if(!ticking){ticking=true;requestAnimationFrame(spy);}},{passive:true});
+  spy();
+  jb.addEventListener('click',e=>{const a=e.target.closest('a');if(!a)return;e.preventDefault();const el=document.getElementById(a.dataset.s);if(el){el.scrollIntoView({behavior:RMQ?'auto':'smooth',block:'start'});history.replaceState(null,'','#'+a.dataset.s);arrive(el);}});
+
+  function arrive(el){ // glow the section once the scroll lands on it
+    const go=()=>{el.querySelectorAll('.rv').forEach(x=>x.classList.add('in'));el.classList.remove('jb-arrive');void el.offsetWidth;el.classList.add('jb-arrive');setTimeout(()=>el.classList.remove('jb-arrive'),1700);};
+    if(RMQ){go();return;}
+    let last=-1,still=0;const t0=performance.now();
+    const wait=()=>{const y=scrollY;if(y===last)still++;else still=0;last=y;if(still>=4||performance.now()-t0>1500)go();else requestAnimationFrame(wait);};
+    requestAnimationFrame(wait);
+  }
+  /* ---------- scroll reveal ---------- */
+  document.documentElement.classList.add('fx');
+  const groups=[];
+  wrap.querySelectorAll(':scope>section,:scope>header').forEach(sec=>{
+    if(sec.getBoundingClientRect().top<innerHeight*0.92)return; // already on screen: leave as is
+    const items=[];
+    [...sec.children].forEach(ch=>{if(ch.matches('.grid2,.detail,.cap-sum'))items.push(...ch.children);else items.push(ch);});
+    items.forEach((el,i)=>{el.classList.add('rv');el.style.setProperty('--d',Math.min(i,6)*80+'ms');});
+    groups.push({sec,items});
+  });
+  if(groups.length){
+    const io=new IntersectionObserver(es=>es.forEach(e=>{if(!e.isIntersecting)return;const g=groups.find(x=>x.sec===e.target);if(!g)return;io.unobserve(e.target);
+      g.items.forEach(el=>el.classList.add('in'));
+      g.sec.querySelectorAll('.tiles').forEach(t=>[...t.children].forEach((c,i)=>A(c,[{opacity:0,transform:'translateY(14px) scale(.985)'},{opacity:1,transform:'none'}],{duration:520,delay:120+i*45})));
+      if(g.sec.id==='why')g.sec.querySelectorAll('.tl li').forEach((li,i)=>A(li,[{opacity:0,transform:'translateX(-10px)'},{opacity:1,transform:'none'}],{duration:480,delay:200+i*55}));
+    }),{rootMargin:'0px 0px -12% 0px'});
+    groups.forEach(g=>io.observe(g.sec));
+  }
+
+  /* ---------- chart draw-in + hover ---------- */
+  let animId=null,pending=false;
+  const chartVisible=()=>{const r=document.getElementById('chart').getBoundingClientRect();return r.top<innerHeight&&r.bottom>0;};
+  function drawIn(force){
+    if(RMQ)return;
+    if(!force&&!chartVisible()){pending=true;return;}
+    pending=false;
+    const svg=document.querySelector('#chart svg');if(!svg)return;
+    const zl=[...svg.querySelectorAll('line')].find(l=>l.getAttribute('stroke')==='var(--muted)');const zy=zl?+zl.getAttribute('y1'):Infinity;
+    const W=+svg.getAttribute('viewBox').split(' ')[2]||600;
+    svg.querySelectorAll('rect:not(.hit)').forEach(r=>{const y=+r.getAttribute('y'),x=+r.getAttribute('x');
+      r.style.transformBox='fill-box';r.style.transformOrigin=y>=zy-0.5?'center top':'center bottom';
+      A(r,[{transform:'scaleY(0)'},{transform:'scaleY(1)'}],{duration:620,delay:(x/W)*380});});
+    svg.querySelectorAll('text').forEach(t=>{if(t.textContent==='◆')A(t,[{opacity:0},{opacity:1}],{duration:300,delay:700});});
+    const ms=document.querySelector('#margin svg');
+    if(ms){ms.querySelectorAll('path').forEach(p=>{const L=p.getTotalLength();p.style.strokeDasharray=L;A(p,[{strokeDashoffset:L},{strokeDashoffset:0}],{duration:900,delay:150,easing:'cubic-bezier(.65,0,.35,1)'}).onfinish=()=>{p.style.strokeDasharray='';};});
+      ms.querySelectorAll('circle,text').forEach(c=>{const x=+(c.getAttribute('cx')||c.getAttribute('x')||0);if(c.closest('g'))return;if(c.getAttribute('text-anchor')==='end')return;A(c,[{opacity:0},{opacity:1}],{duration:260,delay:150+(x/W)*900});});}
+    A(document.getElementById('qtable'),[{opacity:.25},{opacity:1}],{duration:380});
+    A(document.getElementById('facts'),[{opacity:0,transform:'translateY(8px)'},{opacity:1,transform:'none'}],{duration:420});
+  }
+  addEventListener('scroll',()=>{if(pending&&chartVisible())drawIn(true);},{passive:true});
+
+  function barHover(){
+    const svg=document.querySelector('#chart svg');if(!svg)return;
+    const bars=[...svg.querySelectorAll('rect:not(.hit)')];
+    const marks=[...svg.querySelectorAll('text')].filter(t=>t.textContent==='◆');
+    svg.querySelectorAll('.hit').forEach(h=>{
+      const x0=+h.getAttribute('x'),x1=x0+ +h.getAttribute('width');
+      h.addEventListener('mouseenter',()=>{h.style.fill='color-mix(in srgb,var(--accent) 9%,transparent)';
+        bars.forEach(b=>{const cx=+b.getAttribute('x')+(+b.getAttribute('width'))/2;b.style.opacity=(cx>=x0&&cx<=x1)?'1':'.32';});
+        marks.forEach(m=>{const cx=+m.getAttribute('x');m.style.opacity=(cx>=x0&&cx<=x1)?'1':'.3';});});
+      h.addEventListener('mouseleave',()=>{h.style.fill='';bars.forEach(b=>b.style.opacity='');marks.forEach(m=>m.style.opacity='');});
+    });
+  }
+  function marginHover(c){
+    const el=document.getElementById('margin'),svg=el.querySelector('svg');if(!svg)return;
+    const [,, W,H]=svg.getAttribute('viewBox').split(' ').map(Number);const m={l:52,r:30,t:12,b:24};const n=c.q.length,bw=(W-m.l-m.r)/n;
+    const NS='http://www.w3.org/2000/svg';
+    const guide=document.createElementNS(NS,'line');guide.setAttribute('y1',m.t);guide.setAttribute('y2',H-m.b);guide.setAttribute('stroke','var(--muted)');guide.setAttribute('stroke-dasharray','3 3');guide.style.opacity='0';guide.style.transition='opacity .15s';svg.appendChild(guide);
+    c.q.forEach((d,i)=>{const r=document.createElementNS(NS,'rect');r.setAttribute('class','mhit');r.setAttribute('x',m.l+bw*i);r.setAttribute('y',m.t);r.setAttribute('width',bw);r.setAttribute('height',H-m.t-m.b);r.setAttribute('fill','transparent');
+      r.addEventListener('mousemove',e=>{const cx=m.l+bw*i+bw/2;guide.setAttribute('x1',cx);guide.setAttribute('x2',cx);guide.style.opacity='1';
+        const op=d[5]!=null?(d[5]/d[2]*100).toFixed(1)+'%':'n/a',nm=d[3]!=null?(d[3]/d[2]*100).toFixed(1)+'%':'n/a';
+        const flag=d[4]==='g'?' (guidance)':d[4]==='p'?' (preliminary)':d[4]==='a'?' (≈ derived)':'';
+        showTip(e,`<b>${d[1]}</b>${flag}<br>Operating margin ${op}<br>Net margin ${nm}`);});
+      r.addEventListener('mouseleave',()=>{guide.style.opacity='0';hideTip();});
+      svg.appendChild(r);});
+  }
+  const _bar=barChart,_mar=marginChart;
+  barChart=function(c){_bar(c);barHover();};
+  marginChart=function(c){_mar(c);marginHover(c);if(animId!==c.id){animId=c.id;drawIn(false);}};
+  render(); // redraw once so hover layers attach (same data)
+
+  /* ---------- sliding tab pill ---------- */
+  const tabsEl=document.getElementById('tabs');
+  if(tabsEl){const ti=document.createElement('span');ti.className='tab-ind';tabsEl.prepend(ti);tabsEl.classList.add('slide');
+    const place=(instant)=>{const t=tabsEl.querySelector('.tab[aria-selected="true"]');if(!t)return;if(instant)ti.style.transition='none';
+      ti.style.width=t.offsetWidth+'px';ti.style.height=t.offsetHeight+'px';ti.style.transform=`translate(${t.offsetLeft}px,${t.offsetTop}px)`;
+      if(instant){ti.offsetWidth;ti.style.transition='';}};
+    place(true);
+    new MutationObserver(()=>place(false)).observe(tabsEl,{subtree:true,attributes:true,attributeFilter:['aria-selected']});
+    addEventListener('resize',()=>place(true));
+    document.fonts&&document.fonts.ready.then(()=>place(true));}
+
+  /* ---------- modal open / close ---------- */
+  const _open=openChart,_close=closeChart;let closing=false;
+  openChart=function(id){_open(id);const cm=document.getElementById('cm');
+    A(cm,[{opacity:0},{opacity:1}],{duration:200});
+    A(cm.querySelector('.cm-box'),[{opacity:0,transform:'translateY(14px) scale(.97)'},{opacity:1,transform:'none'}],{duration:320});};
+  closeChart=function(){if(closing)return;const cm=document.getElementById('cm');if(RMQ||cm.hidden){_close();return;}closing=true;
+    cm.animate([{opacity:1},{opacity:0}],{duration:170,easing:'ease-in',fill:'forwards'});
+    const a=cm.querySelector('.cm-box').animate([{opacity:1,transform:'none'},{opacity:0,transform:'translateY(10px) scale(.98)'}],{duration:170,easing:'ease-in',fill:'forwards'});
+    a.onfinish=()=>{_close();cm.getAnimations().forEach(x=>x.cancel());cm.querySelector('.cm-box').getAnimations().forEach(x=>x.cancel());closing=false;};};
+  document.getElementById('cmClose').onclick=()=>closeChart();
+  const cmChart=document.getElementById('cmChart');
+  new MutationObserver(()=>{const m=document.getElementById('cmMsg');if(m&&m.hidden)A(cmChart,[{opacity:.35},{opacity:1}],{duration:300});}).observe(document.getElementById('cmMsg'),{attributes:true,attributeFilter:['hidden']});
+
+  /* ---------- live tiles: rolling digits + easing meter ---------- */
+  function roll(el,from,to,fmt){if(!el)return;const node=el.firstChild;if(!node||node.nodeType!==3)return;
+    el.classList.remove('tick-up','tick-dn');void el.offsetWidth;el.classList.add(to>=from?'tick-up':'tick-dn');setTimeout(()=>el.classList.remove('tick-up','tick-dn'),900);
+    if(RMQ)return;const t0=performance.now(),D=650;const step=t=>{const k=Math.min(1,(t-t0)/D),e=1-Math.pow(1-k,3);node.textContent=fmt(from+(to-from)*e);if(k<1)requestAnimationFrame(step);};requestAnimationFrame(step);}
+  const _rl=renderLive;
+  renderLive=function(animate,changed){_rl(animate,changed);if(!changed||animate)return;
+    for(const id in changed){const c=CO.find(x=>x.id===id);if(!c)continue;const tile=document.querySelector(`#tiles .tile[data-id="${id}"]`);if(!tile)continue;
+      const from=c.px-changed[id];roll(tile.querySelector('.t-px'),from,c.px,$f);
+      const mi=tile.querySelector('.meter i');if(mi&&!RMQ){const nw=mi.dataset.w;mi.style.transition='none';mi.style.setProperty('--w',(from/c.hi*100).toFixed(1)+'%');void mi.offsetWidth;mi.style.transition='';requestAnimationFrame(()=>mi.style.setProperty('--w',nw+'%'));}}};
+  const _rw=renderWatch;
+  renderWatch=function(changed){_rw(changed);if(!changed)return;
+    for(const id in changed){const w=WL.find(x=>x.id===id);if(!w)continue;document.querySelectorAll(`.tile.w[data-w="${id}"] .t-px`).forEach(el=>roll(el,w.px-changed[id],w.px,v=>fmtU(w.unit,v)));}};
+
+  /* ---------- sortable scoreboard + market-cap table ---------- */
+  const SORT={score:null,capTbl:null};
+  const key=(cell,num)=>{const t=(cell?cell.textContent:'').trim();if(!num)return t.toLowerCase();
+    const s=t.replace(/−/g,'-').replace(/,/g,'');const m=s.match(/-?\d+(\.\d+)?/);if(!m)return null;let v=+m[0];if(s.slice(m.index+m[0].length).startsWith('tn'))v*=1000;return v;};
+  function isNum(t,col){const rows=[...t.tBodies[0].rows];const hit=rows.filter(r=>/^[\s$₩¥+\-−▲▼≈]*\d/.test((r.cells[col]?r.cells[col].textContent:'').trim())).length;return rows.length&&hit/rows.length>=.6;}
+  function applySort(id){const t=document.getElementById(id);if(!t||!t.tHead||!t.tBodies[0])return;const s=SORT[id];
+    [...t.tHead.rows[0].cells].forEach((th,i)=>{const empty=[...t.tBodies[0].rows].every(r=>!(r.cells[i]&&r.cells[i].textContent.trim()));
+      th.classList.toggle('sortable',!empty);th.setAttribute('aria-sort',s&&s.col===i?(s.dir>0?'ascending':'descending'):'none');});
+    if(!s)return;const tb=t.tBodies[0];const num=isNum(t,s.col);
+    [...tb.rows].sort((a,b)=>{const x=key(a.cells[s.col],num),y=key(b.cells[s.col],num);if(x==null)return 1;if(y==null)return -1;return (x<y?-1:x>y?1:0)*s.dir;}).forEach(r=>tb.appendChild(r));}
+  Object.keys(SORT).forEach(id=>{const t=document.getElementById(id);if(!t)return;
+    t.addEventListener('click',e=>{const th=e.target.closest('thead th.sortable');if(!th)return;const i=th.cellIndex,s=SORT[id];
+      SORT[id]=s&&s.col===i?{col:i,dir:-s.dir}:{col:i,dir:isNum(t,i)?-1:1};applySort(id);
+      if(!RMQ)[...t.tBodies[0].rows].forEach((r,k)=>A(r,[{opacity:.2,transform:'translateY(4px)'},{opacity:1,transform:'none'}],{duration:300,delay:k*18}));});
+    applySort(id);});
+  const _sb=scoreboard;scoreboard=function(){_sb();applySort('score');};
+  const _rc=renderCaps;renderCaps=function(){_rc();applySort('capTbl');};
+})();
+</script>
+</body></html>
