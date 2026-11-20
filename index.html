@@ -232,6 +232,15 @@ input[type=range]{flex:1;min-width:180px;accent-color:var(--accent)}
   <p class="note" style="margin:0">Market cap = live price × shares outstanding. Share counts: Micron, SanDisk, Seagate, Western Digital, Nvidia and Applied Optoelectronics from their latest SEC filings (Aug–Oct 2026); SpaceX 13.58bn, Alphabet 12.23bn (all classes), Meta 2.55bn (all classes) and Cerebras 238m shares; SK hynix and Samsung implied from Korea Exchange market caps (Samsung includes its preferred shares); Kioxia after its 1:3 split on 1 Oct. Buybacks change these slowly, so treat caps as accurate to a few percent. Last quarter revenue is each company’s most recent reported quarter (SEC filings and company releases; Samsung is its preliminary July–September figure and covers the whole company, not just memory). Won and yen revenue are converted at that quarter’s average exchange rate, so YoY growth is the company’s reported rate in its own currency. Price/sales = market cap ÷ (last quarter revenue × 4). CXMT’s share count (~65bn) is implied from its 3.2tn-yuan debut value at 49 yuan a share, so its cap is approximate. OpenAI and Anthropic are private: their “market cap” is the implied value traded on Hyperliquid, and revenue is not published. Next report dates are the companies’ announced dates where available. Tap a row for its chart.</p>
 </section>
 
+<section class="focus" id="fib" aria-label="Fibonacci retracement and key levels">
+  <div class="sec-head"><span class="eyebrow">Fibonacci retracement · support · liquidity levels</span><h2>Where each asset sits in its pullback</h2>
+  <p class="lede">For every asset, the swing is drawn from the lowest low in the 12 months before the peak (0%) up to the peak (100%), and the retracement levels are measured down from the peak. The 0.618 level and the 0.618–0.65 “golden pocket” are where many traders look for a pullback to stop. Supports are earlier swing lows below today's price, where stop orders tend to cluster, so they are also the obvious places for a liquidity grab (a quick wick below and back). Open any chart on this page to see these levels drawn on it.</p></div>
+  <div class="seg" id="fibGrp" role="group" aria-label="Filter by group"></div>
+  <div class="fib-sum" id="fibSum"></div>
+  <div class="tbl-wrap"><table id="fibTbl"></table></div>
+  <p class="note" style="margin:0">Levels are calculated from daily highs and lows (Yahoo Finance; Hyperliquid for HYPE, OpenAI, Anthropic, CXMT and KOSPI 200), converted to USD at today's rate for SK hynix, Samsung and Kioxia. Retracement % is how much of the rally has been given back: 61.8% means the price is at the 0.618 level. “Below swing low” means the whole rally has been erased, so the Fibonacci grid no longer applies and only the supports matter. This is a technical map of where prices sit, not a recommendation to buy or sell; levels often fail, especially in a falling market.</p>
+</section>
+
 <section class="focus" id="ipo" aria-label="AI IPO watch">
   <div class="sec-head"><span class="eyebrow">IPO watch · Anthropic, OpenAI and the next mega listings</span><h2>Who actually gets rich when AI goes public</h2>
   <p class="lede">The public buys at the IPO price. Some insiders bought years earlier at a fraction of it, or hold loans that turn into shares at old prices. This section shows the terms, who holds what, and what it is worth at today's price, using the live Hyperliquid pre-IPO markets where they exist.</p></div>
@@ -715,7 +724,7 @@ function renderWatch(changed){
   }
   const lab=live?'LIVE · Hyperliquid · '+new Date(FEED.t).toLocaleTimeString('en-GB',{timeZone:'Asia/Kolkata',hour12:false})+' IST':'Snapshot · '+fmtTime(WLD.t,'Asia/Kolkata')+' IST';
   document.querySelectorAll('.wAge').forEach(e=>e.textContent=lab);
-  renderCaps(); if(typeof renderIPO==='function')renderIPO();
+  renderCaps(); if(typeof renderIPO==='function')renderIPO(); if(typeof renderFib==='function')renderFib();
 }
 // ---------- market cap league table (memory + AI names) ----------
 const CAPX=[{id:'NVDA',sh:24.1,grp:'AI'},{id:'GOOGL',sh:12.23,grp:'AI'},{id:'AMZN',sh:10.813,grp:'AI'},{id:'META',sh:2.55,grp:'AI'},{id:'AMD',sh:1.6401,grp:'AI'},{id:'CBRS',sh:0.23756,grp:'AI'},{id:'AAOI',sh:0.090771,grp:'AI'},{id:'SPCX',sh:13.58,grp:'AI / space'},{id:'OAI',sh:1,grp:'AI · private',imp:1},{id:'ANTH',sh:18.07,grp:'AI'},{id:'CXMT',sh:65.3,grp:'Memory'}];
@@ -817,6 +826,9 @@ function drawChart(keep){
       :CM.chart.addAreaSeries({lineColor:colors.ac,topColor:colors.ac+'55',bottomColor:colors.ac+'05',lineWidth:2});
     CM.vol=CM.chart.addHistogramSeries({priceFormat:{type:'volume'},priceScaleId:'v',color:colors.grid,lastValueVisible:false,priceLineVisible:false});
     CM.chart.priceScale('v').applyOptions({scaleMargins:{top:.82,bottom:0}});
+    if(typeof fibLevels==='function'&&typeof FIB!=='undefined'&&FIB[CM.id]){const L=fibLevels(CM.id),f=FIB[CM.id];
+      if(L)[[0.382,'0.382',1],[0.5,'0.5',1],[0.618,'0.618',0],[0.65,'0.65',2],[0.786,'0.786',1]].forEach(([r,t,ls])=>CM.series.createPriceLine({price:L[r],color:r===0.618||r===0.65?colors.ac:colors.fg+'99',lineWidth:r===0.618?2:1,lineStyle:ls,axisLabelVisible:true,title:'Fib '+t}));
+      (f.sup||[]).forEach((x,i)=>{if(typeof x[0]==='number')CM.series.createPriceLine({price:x[0],color:colors.dn,lineWidth:1,lineStyle:2,axisLabelVisible:true,title:'Support '+(i+1)})});}
   }
   CM.series.setData(CM.data.map(x=>CM.type==='candle'?{time:x.time,open:x.open,high:x.high,low:x.low,close:x.close}:{time:x.time,value:x.close}));
   CM.vol.setData(CM.data.map(x=>({time:x.time,value:x.v,color:(x.close>=x.open?colors.up:colors.dn)+'66'})));
@@ -1164,7 +1176,7 @@ header>.stamp{animation-delay:.95s}
   /* ---------- section ids + jump bar ---------- */
   const H2ID=[['Quarterly revenue','companies'],['How each company','check'],['Why the stocks fell','why'],['What the order books','outlook'],['Where the numbers','sources']];
   wrap.querySelectorAll(':scope>section').forEach(s=>{if(s.id)return;const h=s.querySelector('h2');if(!h)return;const m=H2ID.find(x=>h.textContent.includes(x[0]));if(m)s.id=m[1];});
-  const LINKS=[['live','Memory'],['ai','AI'],['watch','Crypto'],['indices','Indices'],['earnings','Earnings'],['etfs','ETFs'],['caps','Market cap'],['ipo','IPOs'],['score-sec','Scoreboard'],['companies','Companies'],['check','Data check'],['why','Why it fell'],['outlook','Outlook'],['sources','Sources']].filter(l=>document.getElementById(l[0]));
+  const LINKS=[['live','Memory'],['ai','AI'],['watch','Crypto'],['indices','Indices'],['earnings','Earnings'],['etfs','ETFs'],['caps','Market cap'],['fib','Fib levels'],['ipo','IPOs'],['score-sec','Scoreboard'],['companies','Companies'],['check','Data check'],['why','Why it fell'],['outlook','Outlook'],['sources','Sources']].filter(l=>document.getElementById(l[0]));
   const ticker=document.querySelector('.ticker');
   const jb=document.createElement('nav');jb.className='jb';jb.setAttribute('aria-label','Sections');
   jb.innerHTML='<div class="jb-in">'+LINKS.map(l=>`<a href="#${l[0]}" data-s="${l[0]}">${l[1]}</a>`).join('')+'<span class="jb-ind"></span></div>';
@@ -1393,6 +1405,55 @@ header>.stamp{animation-delay:.95s}
       OAI.map(([n,s,c])=>{const v=val*s/100;return `<tr><td class="co">${n}</td><td style="text-align:left"><span class="stk" style="width:${(s/mx*90).toFixed(0)}px"></span>${s?s.toFixed(1)+'%':'none'}</td><td><b>${s?usd(v):'—'}</b></td><td>${c?usd(c):(s?'≈0':'—')}</td><td>${c&&s?(v/c).toFixed(1)+'×':(s?'n/a':'—')}</td></tr>`}).join('')+'</tbody>';}
   };
   renderIPO(); setInterval(renderIPO,10000);
+})();
+</script>
+<style>
+.fib-sum{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin:14px 0}
+.fib-sum .ipo-k b{font-size:20px}
+#fibTbl td{white-space:nowrap}
+#fibTbl td.fz{white-space:normal;min-width:150px}
+.fbar{position:relative;display:inline-block;width:120px;height:8px;border-radius:4px;background:linear-gradient(90deg,var(--chip) 0 38.2%,color-mix(in srgb,var(--accent) 18%,var(--chip)) 38.2% 61.8%,color-mix(in srgb,var(--accent) 45%,var(--chip)) 61.8% 65%,color-mix(in srgb,var(--down) 22%,var(--chip)) 65% 100%);vertical-align:middle}
+.fbar i{position:absolute;top:-3px;width:3px;height:14px;border-radius:2px;background:var(--ink,#111);transform:translateX(-1px)}
+.fz-tag{display:inline-block;font-size:11.5px;padding:2px 8px;border-radius:999px;background:var(--chip);color:var(--ink2)}
+.fz-gp{background:var(--accent);color:#fff}
+.fz-deep{background:color-mix(in srgb,var(--down) 18%,var(--chip));color:var(--down)}
+.fz-broke{background:var(--down);color:#fff}
+.fz-near{outline:1.5px solid var(--accent)}
+</style>
+<script>
+const FIB={"MU": {"H": 1255.0, "Hd": "2026-06-25", "L": 103.38, "Ld": "2025-08-01", "PL": 650.0, "PLd": "2026-11-05", "sup": [[650.0, "2026-11-05"], [363.9, "2026-02-04"]]}, "SKH": {"H": 2235.9793, "Hd": "2026-06-25", "L": 183.3997, "Ld": "2025-08-21", "PL": 815.193, "PLd": "2026-11-06", "sup": [[815.193, "2026-11-06"], [604.8447, "2026-03-09"]]}, "SEC": {"H": 280.3396, "Hd": "2026-06-19", "L": 43.1176, "Ld": "2025-06-23", "PL": 134.1438, "PLd": "2026-11-06", "sup": [[134.1438, "2026-11-06"], [125.2358, "2026-03-09"]]}, "SNDK": {"H": 294.2987, "Hd": "2026-06-22", "L": 5.0125, "Ld": "2025-08-01", "PL": 93.6738, "PLd": "2026-11-17", "sup": [[69.8228, "2026-03-30"], [64.625, "2026-03-09"]]}, "KIOX": {"H": 235.9908, "Hd": "2026-06-22", "L": 4.6277, "Ld": "2025-06-23", "PL": 45.1419, "PLd": "2026-11-20", "sup": [[38.8223, "2026-03-31"], [35.2834, "2026-03-09"]]}, "STX": {"H": 1145.0, "Hd": "2026-06-18", "L": 130.32, "Ld": "2025-06-20", "PL": 449.28, "PLd": "2026-11-06", "sup": [[449.28, "2026-11-06"], [351.42, "2026-03-30"]]}, "WDC": {"H": 799.87, "Hd": "2026-06-18", "L": 58.53, "Ld": "2025-06-18", "PL": 258.61, "PLd": "2026-11-06", "sup": [[258.61, "2026-11-06"], [249.06, "2026-03-30"]]}, "CXMT": {"H": 9.1654, "Hd": "2026-08-17", "L": 5.964, "Ld": "2026-07-27", "PL": 5.1072, "PLd": "2026-11-17", "sup": [[5.1072, "2026-11-17"]], "note": "swing low is the listing-day low"}, "NVDA": {"H": 243.37, "Hd": "2026-10-06", "L": 164.27, "Ld": "2026-03-30", "PL": 145.71, "PLd": "2026-11-19", "sup": []}, "AMD": {"H": 658.52, "Hd": "2026-10-06", "L": 188.22, "Ld": "2026-03-03", "PL": 402.1, "PLd": "2026-11-05", "sup": [[440.5, "2026-09-03"], [437.23, "2026-06-09"]]}, "GOOGL": {"H": 408.61, "Hd": "2026-05-18", "L": 162.0, "Ld": "2025-06-23", "PL": 272.36, "PLd": "2026-11-19", "sup": [[272.11, "2026-03-30"], [270.7, "2025-11-14"]]}, "AMZN": {"H": 287.2, "Hd": "2026-08-03", "L": 196.0, "Ld": "2026-02-17", "PL": 229.36, "PLd": "2026-10-30", "sup": [[244.3, "2026-09-16"], [229.36, "2026-10-30"]]}, "META": {"H": 796.25, "Hd": "2025-08-15", "L": 479.8, "Ld": "2025-04-21", "PL": 520.26, "PLd": "2026-03-27", "sup": [[592.6, "2026-05-12"], [583.8, "2026-11-05"]]}, "CBRS": {"H": 386.34, "Hd": "2026-05-14", "L": 300.0, "Ld": "2026-05-14", "PL": 77.84, "PLd": "2026-11-05", "sup": [[77.84, "2026-11-05"]], "nofib": "peaked on its first trading day, so there is no prior swing low"}, "AAOI": {"H": 233.67, "Hd": "2026-05-13", "L": 15.06, "Ld": "2025-05-30", "PL": 37.6, "PLd": "2026-11-18", "sup": [[31.67, "2026-01-08"], [24.79, "2025-09-25"]]}, "SPCX": {"H": 225.64, "Hd": "2026-06-16", "L": 149.34, "Ld": "2026-06-12", "PL": 104.83, "PLd": "2026-08-03", "sup": [[120.39, "2026-11-05"], [104.83, "2026-08-03"]], "note": "swing low is the listing-day low"}, "OAI": {"H": 1827.0, "Hd": "2026-09-29", "L": 1130.1, "Ld": "2026-09-02", "PL": 1256.0, "PLd": "2026-11-06", "sup": [[1259.1, "2026-11-17"], [1256.0, "2026-11-06"]], "note": "Hyperliquid history starts Sep 2026"}, "HYPE": {"H": 97.999, "Hd": "2026-09-23", "L": 20.463, "Ld": "2026-01-21", "PL": 59.702, "PLd": "2026-11-14", "sup": [[59.702, "2026-11-14"], [58.328, "2026-06-25"]]}, "BTC": {"H": 126198.0703, "Hd": "2025-10-06", "L": 74436.6797, "Ld": "2025-04-07", "PL": 57747.7656, "PLd": "2026-07-01", "sup": [[60074.2031, "2026-02-06"], [59108.918, "2026-06-05"]]}, "GOLD": {"H": 5586.2002, "Hd": "2026-01-29", "L": 2761.0, "Ld": "2025-01-29", "PL": 3515.0, "PLd": "2026-11-20", "sup": [[3353.3999, "2025-08-20"], [3263.8999, "2025-07-30"]]}, "SILVER": {"H": 121.3, "Hd": "2026-01-29", "L": 28.31, "Ld": "2025-04-07", "PL": 41.02, "PLd": "2026-11-20", "sup": [[37.205, "2025-08-19"], [36.345, "2025-08-01"]]}, "BRENT": {"H": 126.1, "Hd": "2026-04-30", "L": 58.41, "Ld": "2025-05-05", "PL": 70.14, "PLd": "2026-07-02", "sup": [[89.15, "2026-11-10"], [86.08, "2026-04-17"]]}, "WTI": {"H": 119.48, "Hd": "2026-03-09", "L": 54.98, "Ld": "2025-12-16", "PL": 67.04, "PLd": "2026-07-02", "sup": [[80.56, "2026-04-17"], [79.62, "2026-08-26"]]}, "SP500": {"H": 7844.52, "Hd": "2026-10-06", "L": 6316.9102, "Ld": "2026-03-30", "PL": 7173.6299, "PLd": "2026-11-19", "sup": [[6316.9102, "2026-03-30"]]}, "NDX": {"H": 31361.3691, "Hd": "2026-10-06", "L": 22841.4199, "Ld": "2026-03-30", "PL": 26481.8203, "PLd": "2026-11-19", "sup": [[22841.4199, "2026-03-30"]]}, "JP225": {"H": 72831.7266, "Hd": "2026-06-22", "L": 38026.3203, "Ld": "2025-06-23", "PL": 56436.6484, "PLd": "2026-11-20", "sup": [[50558.9102, "2026-03-31"], [48643.7812, "2025-12-18"]]}, "KR200": {"H": 1518.9, "Hd": "2026-06-22", "L": 845.0, "Ld": "2026-04-09", "PL": 746.69, "PLd": "2026-11-05", "sup": [[749.5, "2026-11-17"], [746.69, "2026-11-05"]], "note": "Hyperliquid history starts Apr 2026"}, "DRAM": {"H": 81.34, "Hd": "2026-06-22", "L": 26.14, "Ld": "2026-04-02", "PL": 37.01, "PLd": "2026-11-05", "sup": [[37.01, "2026-11-05"]]}, "SMH": {"H": 671.83, "Hd": "2026-06-22", "L": 257.12, "Ld": "2025-06-23", "PL": 445.32, "PLd": "2026-11-17", "sup": [[374.24, "2026-02-04"], [374.16, "2026-03-09"]]}, "SOXL": {"H": 302.0, "Hd": "2026-06-22", "L": 20.28, "Ld": "2025-06-23", "PL": 40.59, "PLd": "2026-11-05", "sup": [[44.53, "2026-03-09"], [40.59, "2026-11-05"]]}, "EWY": {"H": 220.89, "Hd": "2026-06-18", "L": 67.61, "Ld": "2025-06-18", "PL": 131.52, "PLd": "2026-11-17", "sup": [[121.55, "2026-03-06"], [114.92, "2026-03-31"]]}, "KORU": {"H": 63.985, "Hd": "2026-06-01", "L": 2.5755, "Ld": "2025-06-02", "PL": 5.92, "PLd": "2026-11-17", "sup": [[6.284, "2025-11-21"], [4.932, "2025-09-26"]]}, "ANTH": {"nofib": "listed on 19 Nov, too little history", "PL": 92.72, "PLd": "2026-11-19", "H": 115.1, "Hd": "2026-11-19", "sup": [[83, "IPO price"]]}};
+(function(){
+  const GRP=[['all','All'],['mem','Memory'],['ai','AI'],['watch','Crypto & commodities'],['index','Indices'],['etf','ETFs']];
+  const st={g:'all'};
+  const item=id=>{const c=CO.find(x=>x.id===id); if(c)return {id,name:c.name,grp:'mem',px:c.px,unit:'usd'}; const w=WL.find(x=>x.id===id); return w?{id,name:w.name,grp:w.grp,px:w.px,unit:w.unit}:null};
+  const R=[0.382,0.5,0.618,0.65,0.786];
+  window.fibLevels=id=>{const f=FIB[id]; if(!f||f.nofib)return null; const d=f.H-f.L; const o={}; R.forEach(r=>o[r]=f.H-r*d); return o};
+  const zone=r=>r<0?['At or above the peak','']:r<0.382?['Shallow, above 0.382','']:r<0.5?['0.382–0.5','']:r<0.618?['0.5–0.618','']:r<=0.65?['Golden pocket 0.618–0.65','fz-gp']:r<0.786?['Deep, 0.65–0.786','fz-deep']:r<=1?['Very deep, below 0.786','fz-deep']:['Below swing low','fz-broke'];
+  const fd=d=>{if(!/^\d{4}-/.test(d))return d; const x=new Date(d+'T00:00:00Z');return x.toLocaleDateString('en-GB',{day:'numeric',month:'short',year:x.getUTCFullYear()===2026?undefined:'2-digit',timeZone:'UTC'})};
+  window.renderFib=function(){
+    const T=document.getElementById('fibTbl'); if(!T)return;
+    const ids=[...CO.map(c=>c.id),...WL.map(w=>w.id)].filter((v,i,a)=>a.indexOf(v)===i&&FIB[v]);
+    const rows=ids.map(id=>{const it=item(id); if(!it)return null; const f=FIB[id]; const r=f.nofib?null:(f.H-it.px)/(f.H-f.L); return {...it,f,r}}).filter(Boolean);
+    const g=document.getElementById('fibGrp'); g.innerHTML=GRP.map(([k,l])=>`<button type="button" aria-pressed="${k===st.g}" data-k="${k}">${l}</button>`).join(''); g.onclick=e=>{const b=e.target.closest('button');if(b){st.g=b.dataset.k;renderFib()}};
+    const fr=rows.filter(x=>x.r!=null), cnt=t=>fr.filter(t).length;
+    document.getElementById('fibSum').innerHTML=[['In the golden pocket',cnt(x=>x.r>=0.618&&x.r<=0.65),'0.618–0.65'],['Within 3 pts of 0.618',cnt(x=>Math.abs(x.r-0.618)<=0.03),'either side'],['Deeper than 0.65',cnt(x=>x.r>0.65&&x.r<=1),'0.65–1.0'],['Below swing low',cnt(x=>x.r>1),'rally fully erased'],['Above 0.5',cnt(x=>x.r<0.5),'shallower pullbacks']]
+      .map(([a,b,c])=>`<div class="ipo-k"><span>${a}</span><b>${b}</b><small>${c} · of ${fr.length}</small></div>`).join('');
+    const show=rows.filter(x=>st.g==='all'||x.grp===st.g);
+    const U=(x,v)=>fmtU(x.unit,v);
+    T.innerHTML='<thead><tr><th>Asset</th><th>Price</th><th>Swing low → peak</th><th>0.382</th><th>0.5</th><th>0.618</th><th>0.786</th><th>Given back</th><th>Zone</th><th>Supports below (liquidity)</th><th>Low since peak</th></tr></thead><tbody>'+
+      show.map(x=>{const f=x.f, L=fibLevels(x.id);
+        const sup=(f.sup||[]).filter(s=>s[0]<x.px).map(s=>`${U(x,s[0])} <small style="color:var(--muted)">${fd(s[1])} · ${((s[0]/x.px-1)*100).toFixed(1)}%</small>`).join('<br>')||'<span style="color:var(--muted)">none in range</span>';
+        if(!L)return `<tr data-fib="${x.id}" style="cursor:pointer"><td class="co">${x.name}</td><td><b>${U(x,x.px)}</b></td><td colspan="6" style="color:var(--muted);white-space:normal">No Fibonacci grid: ${f.nofib}.</td><td class="fz"><span class="fz-tag">n/a</span></td><td>${sup}</td><td>${U(x,f.PL)} <small style="color:var(--muted)">${fd(f.PLd)}</small></td></tr>`;
+        const z=zone(x.r), near=Math.abs(x.r-0.618)<=0.03, pos=Math.max(0,Math.min(100,x.r*100));
+        const cell=r=>{const v=L[r];return `<td${r===0.618?' style="font-weight:600"':''}>${U(x,v)}<small style="display:block;color:var(--muted);font-size:11px">${((v/x.px-1)*100).toFixed(1)}%</small></td>`};
+        return `<tr data-fib="${x.id}" style="cursor:pointer" title="Open chart with these levels"><td class="co">${x.name}${f.note?`<small style="display:block;color:var(--muted);font-size:11px;font-weight:400">${f.note}</small>`:''}</td><td><b>${U(x,x.px)}</b></td>
+          <td>${U(x,f.L)} → ${U(x,f.H)}<small style="display:block;color:var(--muted);font-size:11px">${fd(f.Ld)} → ${fd(f.Hd)}</small></td>${cell(0.382)}${cell(0.5)}${cell(0.618)}${cell(0.786)}
+          <td><span class="fbar"><i style="left:${pos}%"></i></span> <b>${(x.r*100).toFixed(1)}%</b></td>
+          <td class="fz"><span class="fz-tag ${z[1]} ${near&&!z[1]?'fz-near':''}">${z[0]}</span>${near&&z[1]!=='fz-gp'?'<small style="display:block;color:var(--muted);font-size:11px">near 0.618</small>':''}</td>
+          <td>${sup}</td><td>${U(x,f.PL)} <small style="color:var(--muted)">${fd(f.PLd)}</small></td></tr>`}).join('')+'</tbody>';
+    T.querySelectorAll('tr[data-fib]').forEach(tr=>tr.onclick=()=>openChart(tr.dataset.fib));
+  };
+  renderFib(); setInterval(renderFib,10000);
 })();
 </script>
 </body></html>
