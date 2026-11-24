@@ -1,7 +1,7 @@
 <!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0;font:14px system-ui,-apple-system,sans-serif}img{max-width:100%}[hidden]{display:none!important}</style></head><body><title>Memory Cycle Monitor</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;700;800&family=Bricolage+Grotesque:opsz,wght@12..96,600..800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Archivo:wght@500;700;800&family=Bricolage+Grotesque:opsz,wght@12..96,600..800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
 <style>
 /* Layout: a scoreboard first (prices, drawdowns, valuations), then per-company quarterly detail, then the selloff timeline and outlook. Wafer-grey neutrals, one silicon-blue accent. */
 :root{
@@ -13,14 +13,6 @@
   --f-body:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
   --f-mono:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace;
 }
-@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
-  --bg:#111417; --panel:#181c20; --ink:#eef1f4; --ink2:#b4bcc6; --muted:#8a94a0; --line:#2a3037; --grid:#22282e;
-  --accent:#3987e5; --rev:#3987e5; --ni:#d95926; --guide:#1c5cab;
-  --down:#ef6b6f; --up:#3cc48c; --warn:#e2a23a; --chip:#20262c; --hl:#15212e; --hl-line:#26476e; --tk-bg:#0a0d10; --tk-line:#222a32; color-scheme:dark}}
-:root[data-theme="dark"]{
-  --bg:#111417; --panel:#181c20; --ink:#eef1f4; --ink2:#b4bcc6; --muted:#8a94a0; --line:#2a3037; --grid:#22282e;
-  --accent:#3987e5; --rev:#3987e5; --ni:#d95926; --guide:#1c5cab;
-  --down:#ef6b6f; --up:#3cc48c; --warn:#e2a23a; --chip:#20262c; --hl:#15212e; --hl-line:#26476e; --tk-bg:#0a0d10; --tk-line:#222a32; color-scheme:dark}
 *{box-sizing:border-box}
 body{background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:15px;line-height:1.55;margin:0}
 .wrap{max-width:none;margin:0;padding-left:max(clamp(16px,4vw,60px),env(safe-area-inset-left,0px));padding-right:max(clamp(16px,4vw,60px),env(safe-area-inset-right,0px));padding-block:28px 56px;display:flex;flex-direction:column;gap:36px}
@@ -1456,4 +1448,67 @@ const FIB={"MU": {"H": 1255.0, "Hd": "2026-06-25", "L": 103.38, "Ld": "2025-08-0
   renderFib(); setInterval(renderFib,10000);
 })();
 </script>
+<style id="theme-lilac">
+/* ===== Lilac & ink light theme (matches the Drawdown & Support Monitor) ===== */
+:root{color-scheme:light;
+  --bg:#F8F8F9;--panel:#FFFFFF;--ink:#111439;--ink2:#4A4E6E;--muted:#6B6F8E;--line:#E4E5EE;--grid:#E7E8F1;
+  --accent:#635BFF;--rev:#635BFF;--ni:#FF7A45;--guide:#C9C6FF;--down:#D92D45;--up:#0B8A5F;--warn:#B77A00;--chip:#F1F1F7;
+  --hl:#FFFFFF;--hl-line:#E4E5EE;--tk-bg:#111439;--tk-fg:#FFFFFF;--tk-mut:#A9ACCB;--tk-line:#23275A;--tk-up:#3FD99A;--tk-dn:#FF7C8C;
+  --soft:#F1F1F7;--edge:#E4E5EE;--shadow:0 1px 2px rgba(17,20,57,.05),0 10px 30px -12px rgba(17,20,57,.14);
+  --grad:linear-gradient(115deg,#635BFF 0%,#8B5CF6 28%,#E0539A 58%,#FF7A45 82%,#FFB86C 100%);
+  --f-display:"Inter","Helvetica Neue",Arial,sans-serif;--f-body:"Inter",system-ui,-apple-system,"Segoe UI",sans-serif;--f-mono:"Inter",system-ui,sans-serif}
+html,body{background:#F8F8F9;color:#111439}
+body{font-size:16px;font-variant-numeric:tabular-nums}
+h1,h2,h3{letter-spacing:-.03em}
+h2{font-weight:750;font-size:clamp(24px,2.4vw,32px)}
+h1.hero{font-family:"Inter",sans-serif;font-weight:800;letter-spacing:-.045em}
+.eyebrow{color:#635BFF;font-weight:650;letter-spacing:.02em;text-transform:none;font-size:13px}
+.lede{color:#4A4E6E}
+/* hero with soft gradient glow */
+header{position:relative;overflow:hidden;isolation:isolate;background:#FFFFFF;border:1px solid var(--edge);border-radius:24px;box-shadow:var(--shadow);padding:clamp(22px,4vw,52px)}
+header::before{content:"";position:absolute;inset:-40% -10% auto 40%;height:160%;background:var(--grad);opacity:.2;filter:blur(64px);transform:skewY(-8deg);z-index:-1}
+header::after{content:"";position:absolute;left:0;right:0;bottom:0;height:6px;background:var(--grad)}
+.chip{background:#FFFFFF;border-color:var(--edge);color:#2B2F55;font-weight:500}
+/* section headings get the gradient bar */
+.sec-head h2,.live-head h2{position:relative;padding-top:16px}
+.sec-head h2::before,.live-head h2::before{content:"";position:absolute;left:0;top:0;width:56px;height:5px;border-radius:3px;background:var(--grad)}
+/* cards and containers: white, hairline border, soft shadow */
+.panel,.focus,.live,.cap-k,.ipo-k,.tile,.ep,.wl-panel{background:#FFFFFF;border:1px solid var(--edge);box-shadow:var(--shadow)}
+.focus,.live{border-radius:20px;padding:clamp(16px,2.2vw,26px)}
+.panel{border-radius:16px}
+.tile{border-radius:16px;transition:transform .2s cubic-bezier(.2,.8,.2,1),box-shadow .2s,border-color .2s}
+.tile:hover{border-color:#C9C6FF;transform:translateY(-2px);box-shadow:0 1px 2px rgba(17,20,57,.05),0 18px 40px -16px rgba(17,20,57,.28)}
+.tile::before{content:"";position:absolute;left:0;right:0;top:0;height:3px;background:var(--grad);opacity:.9}
+.ipo-k,.cap-k{background:var(--soft);box-shadow:none;border-radius:12px}
+.t-px{font-family:"Inter",sans-serif;font-weight:750;letter-spacing:-.035em;color:#111439}
+.t-name{font-weight:650}
+.t-sym,.t-sub,.t-ath{color:#4A4E6E}
+.t-ath b{color:var(--down);font-weight:650}
+.meter{background:var(--soft);height:7px}
+.meter i{background:linear-gradient(90deg,#635BFF,#8B5CF6)}
+.pill{font-weight:600}
+/* ticker: ink bar */
+.ticker{background:#111439;border-bottom:0;font-weight:500}
+/* jump nav: frosted bar with white pills, ink active pill */
+.jb{background:rgba(248,248,249,.86)!important;backdrop-filter:saturate(1.4) blur(12px);-webkit-backdrop-filter:saturate(1.4) blur(12px);border-bottom:1px solid var(--edge)!important;box-shadow:0 8px 24px -14px rgba(17,20,57,.25)}
+.jb-in{gap:8px!important;padding-top:10px;padding-bottom:10px}
+.jb a{font-size:15px!important;font-weight:650!important;color:#111439!important;background:#FFFFFF;border:1px solid var(--edge);border-radius:999px!important;padding:9px 16px!important;box-shadow:0 1px 2px rgba(17,20,57,.05);text-shadow:none!important}
+.jb a:hover,.jb a:focus-visible{background:#FFFFFF!important;border-color:#C9C6FF;box-shadow:0 10px 24px -12px rgba(99,91,255,.45)!important;color:#111439!important}
+.jb a.on{background:#111439!important;color:#FFFFFF!important;border-color:#111439}
+.jb-ind{display:none}
+/* buttons, tabs, segmented controls */
+.tab{background:#FFFFFF;border-color:var(--edge);color:#111439;font-weight:600}
+.tab:hover{border-color:#C9C6FF;color:#111439}
+.tab[aria-selected="true"]{background:#111439;border-color:#111439;color:#FFFFFF}
+.seg{background:var(--soft);border-color:var(--edge)}
+.seg button{font-weight:600;color:#4A4E6E}
+.seg button[aria-pressed="true"]{background:#111439;color:#FFFFFF}
+/* tables */
+th{background:#FFFFFF;color:#2B2F55;font-weight:700;text-transform:none;letter-spacing:0;font-size:12.5px}
+td{color:#111439}
+tbody tr:hover td{background:var(--soft)}
+/* chart modal */
+.cm-box,.cm-in,.cm-dialog{background:#FFFFFF;border-radius:20px;box-shadow:0 30px 80px -20px rgba(17,20,57,.45)}
+svg text{fill:#4A4E6E}
+</style>
 </body></html>
